@@ -14,8 +14,8 @@ class Settings:
     app_name: str = "Lunch With Me"
     frontend_url: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
-    # SMTP (Outlook)
-    smtp_host: str = os.getenv("SMTP_HOST", "smtp-mail.outlook.com")
+    # SMTP (Gmail)
+    smtp_host: str = os.getenv("SMTP_HOST", "smtp.gmail.com")
     smtp_port: int = int(os.getenv("SMTP_PORT", "587"))
     smtp_user: str = os.getenv("SMTP_USER", "")
     smtp_password: str = os.getenv("SMTP_PASSWORD", "")

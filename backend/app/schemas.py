@@ -10,6 +10,23 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RegisterRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    password: str = Field(..., min_length=6)
+    full_name: str = Field(..., min_length=1, max_length=100)
+    email: str = Field(..., max_length=255)
+    date_of_birth: Optional[date] = None
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=6)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -75,34 +92,51 @@ class MemberResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class MemberBalanceResponse(BaseModel):
+# ============== Daily Order Schemas ==============
+
+class RestaurantCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    link: Optional[str] = None
+
+
+class RestaurantUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    link: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class RestaurantResponse(BaseModel):
     id: int
     name: str
-    total_deposited: int  # Tổng nạp vào
-    total_spent: int  # Tổng sử dụng
-    balance: int  # Còn lại
+    link: Optional[str] = None
+    is_active: bool
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 
 
-# ============== Daily Order Schemas ==============
+class OrderLinkItem(BaseModel):
+    label: str = Field(..., min_length=1, max_length=100)
+    url: str = Field(..., min_length=1)
+
 
 class DailyOrderCreate(BaseModel):
     order_date: date
-    menu_link: Optional[str] = None
-    menu_link_chay: Optional[str] = None
+    restaurant_id: Optional[int] = None
     deadline_time: Optional[str] = None  # "HH:MM" VN time, default from config
     note: Optional[str] = None
     created_by: Optional[int] = None
 
 
 class DailyOrderUpdate(BaseModel):
-    menu_link: Optional[str] = None
-    menu_link_chay: Optional[str] = None
     total_bill: Optional[int] = None
     total_bill_chay: Optional[int] = None
     note: Optional[str] = None
     status: Optional[str] = None
+
+
+class DailyOrderLinksUpdate(BaseModel):
+    links: list[OrderLinkItem] = []
 
 
 class DailyOrderFinalize(BaseModel):
@@ -130,8 +164,9 @@ class DailyOrderResponse(BaseModel):
     id: int
     order_date: date
     status: str
-    menu_link: Optional[str] = None
-    menu_link_chay: Optional[str] = None
+    restaurant_id: Optional[int] = None
+    restaurant_name: Optional[str] = None
+    links: list[OrderLinkItem] = []
     order_deadline: Optional[datetime] = None
     minutes_remaining: Optional[int] = None  # computed, not stored
     total_bill: int
@@ -205,8 +240,14 @@ class OrderItemResponse(BaseModel):
 # ============== Deposit Schemas ==============
 
 class DepositCreate(BaseModel):
+    amount: int = Field(..., ge=1, description="Số tiền (nghìn đồng)")
+    note: Optional[str] = None
+    member_id: Optional[int] = None  # admin only: deposit for another member
+
+
+class ChargeCreate(BaseModel):
     member_id: int
-    amount: int = Field(..., description="Số tiền (nghìn đồng)")
+    amount: int = Field(..., ge=1, description="Số tiền bị trừ (nghìn đồng)")
     note: Optional[str] = None
 
 
@@ -216,7 +257,20 @@ class DepositResponse(BaseModel):
     member_name: str
     amount: int
     note: Optional[str] = None
+    status: str  # pending | approved
+    type: str = "deposit"  # deposit | charge
     created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class MemberBalanceResponse(BaseModel):
+    id: int
+    name: str
+    total_deposited: int
+    total_charged: int  # khoản chi ngoài
+    total_spent: int
+    balance: int
 
     model_config = {"from_attributes": True}
 

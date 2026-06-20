@@ -2,7 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from datetime import datetime, timezone
 
 from app.database import get_db, _next_id, _doc_ns
-from app.schemas import LoginRequest, TokenResponse, UserCreate, UserUpdate, UserResponse, ChangePasswordRequest
+from app.schemas import (
+    LoginRequest, TokenResponse, UserCreate, UserUpdate, UserResponse,
+    ChangePasswordRequest, RegisterRequest, ForgotPasswordRequest, ResetPasswordRequest,
+)
 from app.core.auth import (
     hash_password, verify_password, create_access_token,
     get_current_user, get_current_admin,
@@ -30,6 +33,51 @@ def _user_response(u) -> UserResponse:
         member_id=getattr(u, "member_id", None),
         created_at=u.created_at,
     )
+
+
+def _auto_create_member(db, full_name: str) -> int:
+    """Create a member entry for a new user and return the member_id."""
+    member_id = _next_id(db, "members")
+    db.collection("members").document(str(member_id)).set({
+        "id": member_id,
+        "name": full_name,
+        "is_active": True,
+        "is_admin": False,
+        "created_at": datetime.now(timezone.utc),
+    })
+    return member_id
+
+
+@router.post("/register", response_model=TokenResponse, status_code=201)
+def register(data: RegisterRequest, db=Depends(get_db)):
+    """Public self-registration. Auto-creates a linked member entry."""
+    if list(db.collection("users").where("username", "==", data.username).limit(1).stream()):
+        raise HTTPException(status_code=400, detail="Username đã tồn tại")
+    if list(db.collection("users").where("email", "==", data.email).limit(1).stream()):
+        raise HTTPException(status_code=400, detail="Email đã tồn tại")
+
+    member_id = _auto_create_member(db, data.full_name)
+
+    user_id = _next_id(db, "users")
+    now = datetime.now(timezone.utc)
+    doc_data = {
+        "id": user_id,
+        "username": data.username,
+        "password_hash": hash_password(data.password),
+        "full_name": data.full_name,
+        "email": data.email,
+        "date_of_birth": str(data.date_of_birth) if data.date_of_birth else None,
+        "role": "user",
+        "is_active": True,
+        "member_id": member_id,
+        "created_at": now,
+    }
+    db.collection("users").document(str(user_id)).set(doc_data)
+
+    token = create_access_token({"sub": str(user_id), "role": "user"})
+    from app.database import _doc_ns
+    user = _doc_ns(db.collection("users").document(str(user_id)).get())
+    return TokenResponse(access_token=token, user=_user_response(user))
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -82,6 +130,59 @@ def change_password(
         raise HTTPException(status_code=400, detail="Mật khẩu hiện tại không đúng")
     db.collection("users").document(str(current_user.id)).update({"password_hash": hash_password(data.new_password)})
     return {"message": "Đổi mật khẩu thành công"}
+
+
+@router.post("/forgot-password")
+def forgot_password(data: ForgotPasswordRequest, db=Depends(get_db)):
+    import secrets
+    from datetime import timedelta
+    from app.services.email_service import send_reset_password
+
+    results = list(db.collection("users").where("email", "==", data.email).where("is_active", "==", True).limit(1).stream())
+    # Always return 200 to avoid email enumeration
+    if not results:
+        return {"message": "Nếu email tồn tại, link đặt lại mật khẩu sẽ được gửi."}
+
+    user = results[0].to_dict()
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+
+    db.collection("password_reset_tokens").document(token).set({
+        "token": token,
+        "user_id": user["id"],
+        "expires_at": expires_at,
+        "used": False,
+    })
+
+    from app.core.config import settings
+    frontend_url = getattr(settings, "frontend_url", "http://localhost:3000")
+    reset_url = f"{frontend_url}/reset-password?token={token}"
+    send_reset_password(user["full_name"], user["email"], reset_url)
+
+    return {"message": "Nếu email tồn tại, link đặt lại mật khẩu sẽ được gửi."}
+
+
+@router.post("/reset-password")
+def reset_password(data: ResetPasswordRequest, db=Depends(get_db)):
+    ref = db.collection("password_reset_tokens").document(data.token)
+    doc = ref.get()
+    if not doc.exists:
+        raise HTTPException(status_code=400, detail="Token không hợp lệ hoặc đã hết hạn")
+
+    token_data = doc.to_dict()
+    if token_data.get("used"):
+        raise HTTPException(status_code=400, detail="Token đã được sử dụng")
+
+    expires_at = token_data["expires_at"]
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=400, detail="Token đã hết hạn (1 giờ)")
+
+    user_id = token_data["user_id"]
+    db.collection("users").document(str(user_id)).update({"password_hash": hash_password(data.new_password)})
+    ref.update({"used": True})
+    return {"message": "Đặt lại mật khẩu thành công. Hãy đăng nhập lại."}
 
 
 # ---- Admin: manage all users ----

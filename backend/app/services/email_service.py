@@ -1,4 +1,4 @@
-"""Email notifications via Outlook SMTP."""
+"""Email notifications via Gmail SMTP."""
 
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -71,6 +71,23 @@ def send_monthly_statement(month: int, year: int, member_name: str, email: str,
       </table>
       {'<p style="color:#ff6b6b;background:rgba(255,107,107,0.1);padding:12px;border-radius:8px">⚠️ Bạn đang nợ tiền ăn. Vui lòng nạp thêm tiền!</p>' if balance < 0 else ''}
       <p style="color:#6b6b80;font-size:12px;margin-top:24px">Sao kê tự động từ hệ thống Lunch With Me.</p>
+    </div>
+    """
+    _send(email, subject, html)
+
+
+def send_reset_password(full_name: str, email: str, reset_url: str):
+    subject = "🔑 Đặt lại mật khẩu - Lunch With Me"
+    html = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;background:#1a1a2e;color:#f0f0f5;padding:32px;border-radius:16px">
+      <h2 style="color:#ff8c42">🍱 Lunch With Me</h2>
+      <p>Xin chào <strong>{full_name}</strong>,</p>
+      <p>Bạn vừa yêu cầu đặt lại mật khẩu. Bấm nút bên dưới để tiếp tục:</p>
+      <a href="{reset_url}" style="display:inline-block;background:#ff8c42;color:#0a0a0f;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:16px 0">
+        Đặt Lại Mật Khẩu →
+      </a>
+      <p style="color:#a0a0b8;font-size:0.85rem">Link có hiệu lực trong <strong>1 giờ</strong>. Nếu bạn không yêu cầu, hãy bỏ qua email này.</p>
+      <p style="color:#6b6b80;font-size:12px;margin-top:24px">Lunch With Me — Hệ thống đặt cơm nhóm</p>
     </div>
     """
     _send(email, subject, html)

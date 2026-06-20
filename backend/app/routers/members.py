@@ -18,6 +18,14 @@ def _member_response(ns) -> MemberResponse:
     )
 
 
+@router.get("/public", response_model=list[MemberResponse])
+def list_members_public(db=Depends(get_db)):
+    """Public endpoint: list active members for registration form (no auth required)."""
+    members = [_to_ns(s.to_dict()) for s in db.collection("members").where("is_active", "==", True).stream()]
+    members.sort(key=lambda m: m.name)
+    return [_member_response(m) for m in members]
+
+
 @router.get("", response_model=list[MemberResponse])
 def list_members(active_only: bool = True, db=Depends(get_db), _=Depends(get_current_user)):
     col = db.collection("members")

@@ -4,7 +4,8 @@
       "PowerShell(head -50)",
       "PowerShell(cd \"D:\\\\Project\\\\lunch_with_me\\\\backend\"; $env:PYTHONIOENCODING=\"utf-8\"; python seed.py 2>&1)",
       "PowerShell($body = '{\"username\":\"admin\",\"password\":\"admin123\"}'; $res = Invoke-RestMethod -Uri \"http://localhost:8000/api/auth/login\" -Method Post -Body $body -ContentType \"application/json\"; Write-Output \"Login OK\"; Write-Output \"Token: $\\($res.access_token.Substring\\(0,30\\)\\)...\"; Write-Output \"User: $\\($res.user.full_name\\), role: $\\($res.user.role\\)\")",
-      "PowerShell(Get-Process -Name python -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -eq \"\" } | Stop-Process -Force; Write-Output \"Stopped\")"
+      "PowerShell(Get-Process -Name python -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -eq \"\" } | Stop-Process -Force; Write-Output \"Stopped\")",
+      "Bash(npx next *)"
     ]
   }
 }

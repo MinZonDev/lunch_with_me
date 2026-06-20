@@ -7,8 +7,8 @@ from app.core.auth import get_current_user, get_current_admin
 from app.core.config import settings
 from app.database import get_db, _next_id, _to_ns, _doc_ns
 from app.schemas import (
-    DailyOrderCreate, DailyOrderUpdate, DailyOrderFinalize,
-    DailyOrderResponse, DailyOrderListResponse, OrderItemInOrder,
+    DailyOrderCreate, DailyOrderUpdate, DailyOrderFinalize, DailyOrderLinksUpdate,
+    DailyOrderResponse, DailyOrderListResponse, OrderItemInOrder, OrderLinkItem,
 )
 from app.services.cost_calculator import calculate_costs
 
@@ -77,12 +77,16 @@ def _build_order_response(order, items) -> DailyOrderResponse:
             else:
                 eater_count += 1
 
+    raw_links = getattr(order, "links", None) or []
+    parsed_links = [OrderLinkItem(label=l["label"], url=l["url"]) for l in raw_links if isinstance(l, dict)]
+
     return DailyOrderResponse(
         id=order.id,
         order_date=order_date,
         status=order.status,
-        menu_link=getattr(order, "menu_link", None),
-        menu_link_chay=getattr(order, "menu_link_chay", None),
+        restaurant_id=getattr(order, "restaurant_id", None),
+        restaurant_name=getattr(order, "restaurant_name", None),
+        links=parsed_links,
         order_deadline=getattr(order, "order_deadline", None),
         minutes_remaining=_minutes_remaining(getattr(order, "order_deadline", None)),
         total_bill=getattr(order, "total_bill", 0) or 0,
@@ -173,14 +177,32 @@ def create_order(data: DailyOrderCreate, db=Depends(get_db), _=Depends(get_curre
     if db.collection("daily_orders").document(doc_id).get().exists:
         raise HTTPException(status_code=400, detail="Order for this date already exists")
 
+    # Resolve restaurant
+    restaurant_id = data.restaurant_id
+    restaurant_name = None
+    menu_link = data.menu_link
+    if restaurant_id:
+        r_doc = db.collection("restaurants").document(str(restaurant_id)).get()
+        if r_doc.exists:
+            r = r_doc.to_dict()
+            restaurant_name = r.get("name")
+            if not menu_link:
+                menu_link = r.get("link")
+
     order_id = _next_id(db, "daily_orders")
     now = datetime.now(timezone.utc)
+    # Pre-populate links from restaurant if available
+    initial_links = []
+    if restaurant_name and menu_link:
+        initial_links = [{"label": restaurant_name, "url": menu_link}]
+
     order_data = {
         "id": order_id,
         "order_date": doc_id,
         "status": "open",
-        "menu_link": data.menu_link,
-        "menu_link_chay": data.menu_link_chay,
+        "restaurant_id": restaurant_id,
+        "restaurant_name": restaurant_name,
+        "links": initial_links,
         "order_deadline": _make_deadline(data.order_date, data.deadline_time),
         "total_bill": 0,
         "total_bill_chay": 0,
@@ -228,10 +250,6 @@ def update_order(order_id: int, data: DailyOrderUpdate, db=Depends(get_db), _=De
         raise HTTPException(status_code=404, detail="Order not found")
 
     updates = {}
-    if data.menu_link is not None:
-        updates["menu_link"] = data.menu_link
-    if data.menu_link_chay is not None:
-        updates["menu_link_chay"] = data.menu_link_chay
     if data.total_bill is not None:
         updates["total_bill"] = data.total_bill
     if data.total_bill_chay is not None:
@@ -301,6 +319,18 @@ def finalize_order(order_id: int, data: DailyOrderFinalize, db=Depends(get_db), 
             batch.update(item_ref, {"total_cost": cost_map.get(item.id, 0)})
         batch.commit()
 
+    order = _to_ns(ref.get().to_dict())
+    items = _load_items_with_names(db, order_id)
+    return _build_order_response(order, items)
+
+
+@router.put("/{order_id}/links", response_model=DailyOrderResponse)
+def update_links(order_id: int, data: DailyOrderLinksUpdate, db=Depends(get_db), _=Depends(get_current_admin)):
+    """Replace the full list of order links (admin only)."""
+    ref, order = _get_order_by_id(db, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    ref.update({"links": [{"label": l.label, "url": l.url} for l in data.links]})
     order = _to_ns(ref.get().to_dict())
     items = _load_items_with_names(db, order_id)
     return _build_order_response(order, items)

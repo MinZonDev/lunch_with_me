@@ -5,9 +5,8 @@ import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
-from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import get_db, _doc_ns
 from app.core.config import settings
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -37,10 +36,8 @@ def decode_token(token: str) -> Optional[dict]:
 
 def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
-    db: Session = Depends(get_db),
+    db=Depends(get_db),
 ):
-    from app.models import User
-
     if not credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
@@ -48,12 +45,13 @@ def get_current_user(
     if not payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
-    user_id: int = payload.get("sub")
+    user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
-    user = db.query(User).filter(User.id == int(user_id), User.is_active == True).first()
-    if not user:
+    doc = db.collection("users").document(str(user_id)).get()
+    user = _doc_ns(doc)
+    if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
     return user

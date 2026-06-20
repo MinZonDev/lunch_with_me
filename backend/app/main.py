@@ -1,16 +1,32 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db
 from app.routers import members, orders, order_items, deposits, reviews, auth
+from app.routers import reports, admin_router
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    try:
+        from app.services.scheduler import start_scheduler, stop_scheduler
+        start_scheduler()
+        yield
+        stop_scheduler()
+    except ImportError:
+        yield
+
 
 app = FastAPI(
     title="Lunch With Me API",
     description="Hệ thống đặt cơm nhóm - Quản lý order, chia tiền, theo dõi deposit",
-    version="1.0.0",
+    version="2.0.0",
+    lifespan=lifespan,
 )
 
-# CORS - allow Next.js frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -19,19 +35,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
 app.include_router(auth.router)
 app.include_router(members.router)
 app.include_router(orders.router)
 app.include_router(order_items.router)
 app.include_router(deposits.router)
 app.include_router(reviews.router)
-
-
-@app.on_event("startup")
-def on_startup():
-    """Initialize database tables on startup."""
-    init_db()
+app.include_router(reports.router)
+app.include_router(admin_router.router)
 
 
 @app.get("/api/health")

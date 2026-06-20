@@ -11,21 +11,14 @@ Logic:
    d. Each person pays = share + their extra cost
 """
 
-from app.models import OrderItem, DailyOrder
 import math
 
 
-def calculate_costs(daily_order: DailyOrder, items: list[OrderItem]) -> dict:
+def calculate_costs(daily_order, items: list) -> dict:
     """
     Calculate how to split the bill for a daily order.
-
-    Returns:
-        dict with:
-        - shared_cost_per_person: phần chia đều (regular)
-        - shared_cost_per_person_chay: phần chia đều (chay)
-        - item_costs: list of {item_id, member_id, total_cost}
+    Works with SimpleNamespace objects or any object with the expected attributes.
     """
-    # Separate regular and chay eaters
     regular_eaters = [item for item in items if item.is_eating and not item.is_chay]
     chay_eaters = [item for item in items if item.is_eating and item.is_chay]
 
@@ -35,43 +28,29 @@ def calculate_costs(daily_order: DailyOrder, items: list[OrderItem]) -> dict:
         "item_costs": [],
     }
 
-    # Calculate regular meal costs
-    if regular_eaters and daily_order.total_bill > 0:
-        total_extras = sum(item.extra_item_cost or 0 for item in regular_eaters)
-        shared_pool = daily_order.total_bill - total_extras
-        per_person = math.ceil(shared_pool / len(regular_eaters)) if len(regular_eaters) > 0 else 0
+    total_bill = getattr(daily_order, "total_bill", 0) or 0
+    total_bill_chay = getattr(daily_order, "total_bill_chay", 0) or 0
+
+    if regular_eaters and total_bill > 0:
+        total_extras = sum(getattr(i, "extra_item_cost", 0) or 0 for i in regular_eaters)
+        shared_pool = total_bill - total_extras
+        per_person = math.ceil(shared_pool / len(regular_eaters)) if regular_eaters else 0
         result["shared_cost_per_person"] = per_person
-
         for item in regular_eaters:
-            total = per_person + (item.extra_item_cost or 0)
-            result["item_costs"].append({
-                "item_id": item.id,
-                "member_id": item.member_id,
-                "total_cost": total,
-            })
+            total = per_person + (getattr(item, "extra_item_cost", 0) or 0)
+            result["item_costs"].append({"item_id": item.id, "member_id": item.member_id, "total_cost": total})
 
-    # Calculate chay meal costs
-    if chay_eaters and daily_order.total_bill_chay > 0:
-        total_extras_chay = sum(item.extra_item_cost or 0 for item in chay_eaters)
-        shared_pool_chay = daily_order.total_bill_chay - total_extras_chay
-        per_person_chay = math.ceil(shared_pool_chay / len(chay_eaters)) if len(chay_eaters) > 0 else 0
+    if chay_eaters and total_bill_chay > 0:
+        total_extras_chay = sum(getattr(i, "extra_item_cost", 0) or 0 for i in chay_eaters)
+        shared_pool_chay = total_bill_chay - total_extras_chay
+        per_person_chay = math.ceil(shared_pool_chay / len(chay_eaters)) if chay_eaters else 0
         result["shared_cost_per_person_chay"] = per_person_chay
-
         for item in chay_eaters:
-            total = per_person_chay + (item.extra_item_cost or 0)
-            result["item_costs"].append({
-                "item_id": item.id,
-                "member_id": item.member_id,
-                "total_cost": total,
-            })
+            total = per_person_chay + (getattr(item, "extra_item_cost", 0) or 0)
+            result["item_costs"].append({"item_id": item.id, "member_id": item.member_id, "total_cost": total})
 
-    # Non-eaters get 0 cost
-    non_eaters = [item for item in items if not item.is_eating]
-    for item in non_eaters:
-        result["item_costs"].append({
-            "item_id": item.id,
-            "member_id": item.member_id,
-            "total_cost": 0,
-        })
+    for item in items:
+        if not item.is_eating:
+            result["item_costs"].append({"item_id": item.id, "member_id": item.member_id, "total_cost": 0})
 
     return result

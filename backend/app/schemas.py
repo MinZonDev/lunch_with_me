@@ -91,6 +91,7 @@ class DailyOrderCreate(BaseModel):
     order_date: date
     menu_link: Optional[str] = None
     menu_link_chay: Optional[str] = None
+    deadline_time: Optional[str] = None  # "HH:MM" VN time, default from config
     note: Optional[str] = None
     created_by: Optional[int] = None
 
@@ -131,6 +132,8 @@ class DailyOrderResponse(BaseModel):
     status: str
     menu_link: Optional[str] = None
     menu_link_chay: Optional[str] = None
+    order_deadline: Optional[datetime] = None
+    minutes_remaining: Optional[int] = None  # computed, not stored
     total_bill: int
     total_bill_chay: int
     shared_cost_per_person: int
@@ -217,6 +220,39 @@ class DepositResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
+
+# ============== Report Schemas ==============
+
+class ReportMemberRow(BaseModel):
+    member_id: int
+    member_name: str
+    days_eaten: int
+    total_cost: int
+
+class ReportDayRow(BaseModel):
+    order_date: date
+    total_bill: int
+    eater_count: int
+
+class ReportResponse(BaseModel):
+    period_label: str
+    days: list[ReportDayRow]
+    members: list[ReportMemberRow]
+    grand_total: int
+
+# ============== Deposit History Schemas ==============
+
+class MemberDailyCost(BaseModel):
+    member_id: int
+    member_name: str
+    daily_costs: dict  # date_str -> cost
+    total_spent: int
+
+class DepositHistoryResponse(BaseModel):
+    month: int
+    year: int
+    dates: list[str]
+    members: list[MemberDailyCost]
 
 # ============== Review Schemas ==============
 

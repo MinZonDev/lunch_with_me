@@ -1,11 +1,14 @@
-"""Seed database with team members and default admin user."""
+"""Seed Firestore with team members and default admin user."""
 import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
 
-from app.database import SessionLocal, init_db
-from app.models import Member, User
+from dotenv import load_dotenv
+load_dotenv()
+
+from app.database import init_db, get_db, _next_id
 from app.core.auth import hash_password
+from datetime import datetime, timezone
 
 TEAM_MEMBERS = [
     "Hiếu",
@@ -22,50 +25,59 @@ TEAM_MEMBERS = [
     "Hieuthuhai",
 ]
 
+
 def seed():
     init_db()
-    db = SessionLocal()
-    try:
-        # Seed members
-        existing = {m.name for m in db.query(Member).all()}
-        added = 0
-        member_map = {}
-        for name in TEAM_MEMBERS:
-            if name not in existing:
-                m = Member(name=name, is_active=True)
-                db.add(m)
-                db.flush()
-                member_map[name] = m.id
-                added += 1
-                print(f"  + Member: {name}")
-            else:
-                m = db.query(Member).filter(Member.name == name).first()
-                member_map[name] = m.id
-                print(f"  = Member: {name} (already exists)")
-        db.commit()
-        print(f"\nAdded {added} new members.")
+    db = get_db()
 
-        # Seed default admin user
-        admin = db.query(User).filter(User.username == "admin").first()
-        if not admin:
-            hiếu_id = member_map.get("Hiếu")
-            admin = User(
-                username="admin",
-                password_hash=hash_password("admin123"),
-                full_name="Admin",
-                email="admin@lunchme.local",
-                role="admin",
-                member_id=hiếu_id,
-            )
-            db.add(admin)
-            db.commit()
-            print("\n  + User: admin / admin123 (CHANGE THIS PASSWORD!)")
+    # Seed members
+    existing = {s.to_dict()["name"] for s in db.collection("members").stream()}
+    added = 0
+    member_map = {}
+
+    for name in TEAM_MEMBERS:
+        if name not in existing:
+            new_id = _next_id(db, "members")
+            db.collection("members").document(str(new_id)).set({
+                "id": new_id,
+                "name": name,
+                "is_active": True,
+                "is_admin": False,
+                "created_at": datetime.now(timezone.utc),
+            })
+            member_map[name] = new_id
+            added += 1
+            print(f"  + Member: {name}")
         else:
-            print("\n  = User: admin (already exists)")
+            snap = list(db.collection("members").where("name", "==", name).limit(1).stream())
+            member_map[name] = snap[0].to_dict()["id"]
+            print(f"  = Member: {name} (already exists)")
 
-        print("\nSeed done!")
-    finally:
-        db.close()
+    print(f"\nAdded {added} new members.")
+
+    # Seed default admin user
+    admin_existing = list(db.collection("users").where("username", "==", "admin").limit(1).stream())
+    if not admin_existing:
+        hieu_id = member_map.get("Hiếu")
+        user_id = _next_id(db, "users")
+        db.collection("users").document(str(user_id)).set({
+            "id": user_id,
+            "username": "admin",
+            "password_hash": hash_password("admin123"),
+            "full_name": "Admin",
+            "email": "admin@lunchme.local",
+            "date_of_birth": None,
+            "role": "admin",
+            "is_active": True,
+            "member_id": hieu_id,
+            "created_at": datetime.now(timezone.utc),
+        })
+        print("\n  + User: admin / admin123 (CHANGE THIS PASSWORD!)")
+    else:
+        print("\n  = User: admin (already exists)")
+
+    print("\nSeed done!")
+
 
 if __name__ == "__main__":
     seed()

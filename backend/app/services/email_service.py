@@ -76,6 +76,24 @@ def send_monthly_statement(month: int, year: int, member_name: str, email: str,
     _send(email, subject, html)
 
 
+def send_debt_reminder(full_name: str, email: str, balance: int, frontend_url: str):
+    """Nhắc thành viên nạp tiền vì đang nợ."""
+    subject = "⚠️ Nhắc nợ tiền cơm - Lunch With Me"
+    html = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;background:#1a1a2e;color:#f0f0f5;padding:32px;border-radius:16px">
+      <h2 style="color:#ff8c42">🍱 Lunch With Me</h2>
+      <p>Xin chào <strong>{full_name}</strong>,</p>
+      <p>Bạn hiện đang <strong style="color:#ff6b6b">nợ {abs(balance):,}k</strong> tiền cơm.</p>
+      <p>Vui lòng nạp tiền để tiếp tục tham gia đặt cơm nhé!</p>
+      <a href="{frontend_url}/deposit" style="display:inline-block;background:#ff8c42;color:#0a0a0f;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:16px 0">
+        Nạp Tiền Ngay →
+      </a>
+      <p style="color:#6b6b80;font-size:12px;margin-top:24px">Thông báo tự động từ hệ thống Lunch With Me.</p>
+    </div>
+    """
+    _send(email, subject, html)
+
+
 def send_reset_password(full_name: str, email: str, reset_url: str):
     subject = "🔑 Đặt lại mật khẩu - Lunch With Me"
     html = f"""

@@ -45,9 +45,12 @@ class UserCreate(BaseModel):
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    nickname: Optional[str] = Field(None, max_length=50)
     email: Optional[str] = Field(None, max_length=255)
     date_of_birth: Optional[date] = None
+    avatar_url: Optional[str] = None
     member_id: Optional[int] = None
+    role: Optional[str] = Field(None, pattern="^(user|admin)$")  # admin only
 
 
 class ChangePasswordRequest(BaseModel):
@@ -59,8 +62,10 @@ class UserResponse(BaseModel):
     id: int
     username: str
     full_name: str
+    nickname: Optional[str] = None
     email: str
     date_of_birth: Optional[date] = None
+    avatar_url: Optional[str] = None
     role: str
     is_active: bool
     member_id: Optional[int] = None

@@ -26,8 +26,10 @@ def _user_response(u) -> UserResponse:
         id=u.id,
         username=u.username,
         full_name=u.full_name,
+        nickname=getattr(u, "nickname", None),
         email=u.email,
         date_of_birth=dob,
+        avatar_url=getattr(u, "avatar_url", None),
         role=u.role,
         is_active=u.is_active,
         member_id=getattr(u, "member_id", None),
@@ -103,6 +105,12 @@ def update_me(data: UserUpdate, current_user=Depends(get_current_user), db=Depen
     updates = {}
     if data.full_name is not None:
         updates["full_name"] = data.full_name
+        # Sync member name
+        mid = getattr(current_user, "member_id", None)
+        if mid:
+            db.collection("members").document(str(mid)).update({"name": data.full_name})
+    if data.nickname is not None:
+        updates["nickname"] = data.nickname
     if data.email is not None:
         conflict = list(db.collection("users").where("email", "==", data.email).limit(1).stream())
         if conflict and conflict[0].to_dict()["id"] != current_user.id:
@@ -110,8 +118,8 @@ def update_me(data: UserUpdate, current_user=Depends(get_current_user), db=Depen
         updates["email"] = data.email
     if data.date_of_birth is not None:
         updates["date_of_birth"] = str(data.date_of_birth)
-    if data.member_id is not None:
-        updates["member_id"] = data.member_id
+    if data.avatar_url is not None:
+        updates["avatar_url"] = data.avatar_url or None
 
     if updates:
         db.collection("users").document(str(current_user.id)).update(updates)
@@ -223,12 +231,18 @@ def create_user(data: UserCreate, db=Depends(get_db), _=Depends(get_current_admi
 @router.put("/users/{user_id}", response_model=UserResponse)
 def update_user(user_id: int, data: UserUpdate, db=Depends(get_db), _=Depends(get_current_admin)):
     ref = db.collection("users").document(str(user_id))
-    if not ref.get().exists:
+    doc = ref.get()
+    if not doc.exists:
         raise HTTPException(status_code=404, detail="User not found")
 
     updates = {}
     if data.full_name is not None:
         updates["full_name"] = data.full_name
+        mid = doc.to_dict().get("member_id")
+        if mid:
+            db.collection("members").document(str(mid)).update({"name": data.full_name})
+    if data.nickname is not None:
+        updates["nickname"] = data.nickname
     if data.email is not None:
         conflict = list(db.collection("users").where("email", "==", data.email).limit(1).stream())
         if conflict and conflict[0].to_dict()["id"] != user_id:
@@ -238,6 +252,8 @@ def update_user(user_id: int, data: UserUpdate, db=Depends(get_db), _=Depends(ge
         updates["date_of_birth"] = str(data.date_of_birth)
     if data.member_id is not None:
         updates["member_id"] = data.member_id
+    if data.role is not None:
+        updates["role"] = data.role
 
     if updates:
         ref.update(updates)

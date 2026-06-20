@@ -142,10 +142,91 @@ def check_low_balance(member_id: int):
         send_low_balance_alert(user["full_name"], user["email"], balance)
 
 
+def _job_debt_reminder():
+    from app.database import init_db, get_db
+    from app.services.email_service import send_debt_reminder
+    from app.core.config import settings as cfg
+
+    init_db()
+    db = get_db()
+
+    # Check if enabled
+    doc = db.document("_settings/debt_reminder").get()
+    if not doc.exists or not doc.to_dict().get("enabled"):
+        return
+
+    # Compute balances for all active users
+    all_txns = [s.to_dict() for s in db.collection("deposits").stream()]
+    all_items = [s.to_dict() for s in db.collection("order_items").where("is_eating", "==", True).stream()]
+    finalized_ids = {
+        s.to_dict()["id"]
+        for s in db.collection("daily_orders").where("status", "==", "finalized").stream()
+    }
+    users = [s.to_dict() for s in db.collection("users").where("is_active", "==", True).stream()]
+
+    sent = 0
+    for u in users:
+        mid = u.get("member_id")
+        if not mid or not u.get("email"):
+            continue
+        my_txns = [t for t in all_txns if t["member_id"] == mid]
+        deposited = sum(t["amount"] for t in my_txns if t.get("type", "deposit") == "deposit" and t.get("status") == "approved")
+        charged = sum(t["amount"] for t in my_txns if t.get("type") == "charge")
+        spent = sum(i.get("total_cost", 0) or 0 for i in all_items if i["member_id"] == mid and i["daily_order_id"] in finalized_ids)
+        balance = deposited - charged - spent
+        if balance < 0:
+            send_debt_reminder(u["full_name"], u["email"], balance, cfg.frontend_url)
+            sent += 1
+
+    print(f"[Scheduler] Debt reminder sent to {sent} members")
+
+
+_DAY_MAP = {"mon": "mon", "tue": "tue", "wed": "wed", "thu": "thu", "fri": "fri", "sat": "sat", "sun": "sun"}
+
+
+def reschedule_debt_reminder(cfg):
+    """Dynamically reschedule or remove the debt reminder job based on settings."""
+    job_id = "debt_reminder"
+    try:
+        _scheduler.remove_job(job_id)
+    except Exception:
+        pass
+
+    if not cfg.enabled:
+        print("[Scheduler] Debt reminder disabled")
+        return
+
+    h, m = map(int, cfg.time.split(":"))
+
+    if cfg.schedule == "daily":
+        trigger = CronTrigger(hour=h, minute=m, timezone=VN_TZ)
+    elif cfg.schedule == "weekly":
+        trigger = CronTrigger(day_of_week=_DAY_MAP.get(cfg.day_of_week, "mon"), hour=h, minute=m, timezone=VN_TZ)
+    else:  # biweekly — approximate with every 2 weeks via week parameter
+        trigger = CronTrigger(day_of_week=_DAY_MAP.get(cfg.day_of_week, "mon"), week="*/2", hour=h, minute=m, timezone=VN_TZ)
+
+    _scheduler.add_job(_job_debt_reminder, trigger, id=job_id)
+    print(f"[Scheduler] Debt reminder scheduled: {cfg.schedule} {cfg.day_of_week} {cfg.time}")
+
+
 def start_scheduler():
     _scheduler.add_job(_job_deadline_reminder, "interval", minutes=5, id="deadline_reminder")
     _scheduler.add_job(_job_auto_lock_past_deadline, CronTrigger(hour=12, minute=5, timezone=VN_TZ), id="auto_lock")
     _scheduler.add_job(_job_monthly_statement, CronTrigger(day=1, hour=8, timezone=VN_TZ), id="monthly_statement")
+
+    # Load debt reminder settings from Firestore on startup
+    try:
+        from app.database import init_db, get_db
+        init_db()
+        db = get_db()
+        doc = db.document("_settings/debt_reminder").get()
+        if doc.exists:
+            from app.routers.reminders import ReminderSettings
+            cfg = ReminderSettings(**doc.to_dict())
+            reschedule_debt_reminder(cfg)
+    except Exception as e:
+        print(f"[Scheduler] Could not load debt reminder settings: {e}")
+
     _scheduler.start()
     print("[Scheduler] Started")
 

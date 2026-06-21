@@ -76,19 +76,66 @@ def send_monthly_statement(month: int, year: int, member_name: str, email: str,
     _send(email, subject, html)
 
 
+def _vietqr_url(bank_id: str, account: str, account_name: str, amount: int = 0, info: str = "") -> str:
+    import urllib.parse
+    base = f"https://img.vietqr.io/image/{bank_id}-{account}-compact2.png"
+    params = {"accountName": account_name}
+    if amount > 0:
+        params["amount"] = str(amount * 1000)  # amount in VND (input is k)
+    if info:
+        params["addInfo"] = info
+    return base + "?" + urllib.parse.urlencode(params)
+
+
 def send_debt_reminder(full_name: str, email: str, balance: int, frontend_url: str):
     """Nhắc thành viên nạp tiền vì đang nợ."""
+    from app.core.config import settings as cfg
+    transfer_info = f"{full_name} nap com"
+    qr_url = _vietqr_url(cfg.bank_id, cfg.bank_account, cfg.bank_account_name, abs(balance), transfer_info)
+
     subject = "⚠️ Nhắc nợ tiền cơm - Lunch With Me"
     html = f"""
-    <div style="font-family:sans-serif;max-width:480px;margin:auto;background:#1a1a2e;color:#f0f0f5;padding:32px;border-radius:16px">
-      <h2 style="color:#ff8c42">🍱 Lunch With Me</h2>
+    <div style="font-family:sans-serif;max-width:520px;margin:auto;background:#1a1a2e;color:#f0f0f5;padding:32px;border-radius:16px">
+      <h2 style="color:#ff8c42;margin:0 0 4px">🍱 Lunch With Me</h2>
+      <p style="color:#a0a0b8;font-size:13px;margin:0 0 20px">Hệ thống đặt cơm nhóm</p>
+
       <p>Xin chào <strong>{full_name}</strong>,</p>
-      <p>Bạn hiện đang <strong style="color:#ff6b6b">nợ {abs(balance):,}k</strong> tiền cơm.</p>
-      <p>Vui lòng nạp tiền để tiếp tục tham gia đặt cơm nhé!</p>
-      <a href="{frontend_url}/deposit" style="display:inline-block;background:#ff8c42;color:#0a0a0f;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:16px 0">
-        Nạp Tiền Ngay →
-      </a>
-      <p style="color:#6b6b80;font-size:12px;margin-top:24px">Thông báo tự động từ hệ thống Lunch With Me.</p>
+      <p>Bạn hiện đang <strong style="color:#ff6b6b;font-size:1.1em">nợ {abs(balance):,}k</strong> tiền cơm. Vui lòng làm theo 2 bước bên dưới.</p>
+
+      <!-- Step 1: Bank transfer -->
+      <div style="background:rgba(255,140,66,0.08);border:1px solid rgba(255,140,66,0.25);border-radius:12px;padding:20px;margin:20px 0">
+        <div style="font-weight:700;color:#ff8c42;font-size:15px;margin-bottom:14px">Bước 1 — Quét QR hoặc chuyển khoản</div>
+
+        <!-- QR code centered -->
+        <div style="text-align:center;margin-bottom:16px">
+          <img src="{qr_url}" alt="QR chuyển khoản"
+               style="width:200px;height:200px;border-radius:12px;border:4px solid #fff;background:#fff" />
+          <p style="color:#a0a0b8;font-size:12px;margin:6px 0 0">Quét bằng app ngân hàng bất kỳ</p>
+        </div>
+
+        <!-- Bank details -->
+        <table style="width:100%;border-collapse:collapse;font-size:14px;border-top:1px solid rgba(255,255,255,0.08);padding-top:12px">
+          <tr><td style="color:#a0a0b8;padding:5px 0;width:130px">Ngân hàng</td><td style="font-weight:600">Vikki Digital Bank</td></tr>
+          <tr><td style="color:#a0a0b8;padding:5px 0">Chủ tài khoản</td><td style="font-weight:600">{cfg.bank_account_name}</td></tr>
+          <tr><td style="color:#a0a0b8;padding:5px 0">Số tài khoản</td><td style="font-weight:700;font-size:1.1em;letter-spacing:1.5px;color:#ffe66d">{cfg.bank_account}</td></tr>
+          <tr><td style="color:#a0a0b8;padding:5px 0">Số tiền gợi ý</td><td style="font-weight:700;color:#ff8c42">{abs(balance):,}k</td></tr>
+          <tr><td style="color:#a0a0b8;padding:5px 0">Nội dung CK</td><td style="font-weight:600">{transfer_info}</td></tr>
+        </table>
+      </div>
+
+      <!-- Step 2: Create deposit request -->
+      <div style="background:rgba(78,205,196,0.07);border:1px solid rgba(78,205,196,0.22);border-radius:12px;padding:20px;margin:20px 0">
+        <div style="font-weight:700;color:#4ecdc4;font-size:15px;margin-bottom:10px">Bước 2 — Tạo yêu cầu nạp tiền trên app</div>
+        <p style="margin:0 0 14px;font-size:14px;color:#c0c0d8">Sau khi chuyển khoản xong, vào app tạo yêu cầu nạp tiền để admin xác nhận và cộng vào số dư.</p>
+        <a href="{frontend_url}/deposit"
+           style="display:inline-block;background:#4ecdc4;color:#0a0a0f;padding:11px 24px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px">
+          Tạo Yêu Cầu Nạp Tiền →
+        </a>
+      </div>
+
+      <p style="color:#6b6b80;font-size:12px;margin-top:20px;border-top:1px solid rgba(255,255,255,0.07);padding-top:14px">
+        Thông báo tự động · Lunch With Me. Nếu bạn đã nạp tiền, hãy bỏ qua email này.
+      </p>
     </div>
     """
     _send(email, subject, html)

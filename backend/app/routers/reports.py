@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
 import io
 
 from app.database import get_db
@@ -24,7 +23,7 @@ def _to_response(data: dict) -> ReportResponse:
 def get_weekly_report(
     year: int = Query(...),
     week: int = Query(..., ge=1, le=53),
-    db: Session = Depends(get_db),
+    db=Depends(get_db),
     _=Depends(get_current_user),
 ):
     return _to_response(weekly_report(db, year, week))
@@ -34,7 +33,7 @@ def get_weekly_report(
 def get_monthly_report(
     year: int = Query(...),
     month: int = Query(..., ge=1, le=12),
-    db: Session = Depends(get_db),
+    db=Depends(get_db),
     _=Depends(get_current_user),
 ):
     return _to_response(monthly_report(db, year, month))
@@ -44,7 +43,7 @@ def get_monthly_report(
 def export_weekly_csv(
     year: int = Query(...),
     week: int = Query(..., ge=1, le=53),
-    db: Session = Depends(get_db),
+    db=Depends(get_db),
     _=Depends(get_current_user),
 ):
     data = weekly_report(db, year, week)
@@ -61,7 +60,7 @@ def export_weekly_csv(
 def export_monthly_csv(
     year: int = Query(...),
     month: int = Query(..., ge=1, le=12),
-    db: Session = Depends(get_db),
+    db=Depends(get_db),
     _=Depends(get_current_user),
 ):
     data = monthly_report(db, year, month)

@@ -13,11 +13,19 @@ def init_db():
     if firebase_admin._apps:
         return
     cred_path = os.getenv("FIREBASE_CREDENTIALS_PATH")
-    if cred_path:
+    cred_json = os.getenv("FIREBASE_CREDENTIALS_JSON")
+    if cred_json:
+        import json, tempfile
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        tmp.write(cred_json)
+        tmp.close()
+        cred = credentials.Certificate(tmp.name)
+        firebase_admin.initialize_app(cred)
+    elif cred_path and os.path.exists(cred_path):
         cred = credentials.Certificate(cred_path)
         firebase_admin.initialize_app(cred)
     else:
-        firebase_admin.initialize_app()  # uses GOOGLE_APPLICATION_CREDENTIALS
+        firebase_admin.initialize_app()  # uses ADC on Cloud Run
 
 
 def get_db():

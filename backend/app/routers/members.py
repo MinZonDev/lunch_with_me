@@ -8,12 +8,25 @@ from app.core.auth import get_current_user, get_current_admin
 router = APIRouter(prefix="/api/members", tags=["members"])
 
 
-def _member_response(ns) -> MemberResponse:
+def _build_member_username_map(db) -> dict:
+    """Return {member_id: username} from users collection."""
+    result = {}
+    for snap in db.collection("users").stream():
+        u = snap.to_dict()
+        mid = u.get("member_id")
+        uname = u.get("username")
+        if mid and uname:
+            result[mid] = uname
+    return result
+
+
+def _member_response(ns, username: str | None = None) -> MemberResponse:
     return MemberResponse(
         id=ns.id,
         name=ns.name,
         is_active=ns.is_active,
         is_admin=getattr(ns, "is_admin", False),
+        username=username,
         created_at=ns.created_at,
     )
 
@@ -35,7 +48,8 @@ def list_members(active_only: bool = True, db=Depends(get_db), _=Depends(get_cur
         stream = col.stream()
     members = [_to_ns(s.to_dict()) for s in stream]
     members.sort(key=lambda m: m.name)
-    return [_member_response(m) for m in members]
+    umap = _build_member_username_map(db)
+    return [_member_response(m, umap.get(m.id)) for m in members]
 
 
 @router.get("/{member_id}", response_model=MemberResponse)
@@ -44,7 +58,8 @@ def get_member(member_id: int, db=Depends(get_db), _=Depends(get_current_user)):
     m = _doc_ns(doc)
     if not m:
         raise HTTPException(status_code=404, detail="Member not found")
-    return _member_response(m)
+    umap = _build_member_username_map(db)
+    return _member_response(m, umap.get(member_id))
 
 
 @router.post("", response_model=MemberResponse, status_code=201)

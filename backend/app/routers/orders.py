@@ -83,6 +83,7 @@ def _build_order_response(order, items) -> DailyOrderResponse:
     return DailyOrderResponse(
         id=order.id,
         order_date=order_date,
+        name=getattr(order, "name", None),
         status=order.status,
         restaurant_id=getattr(order, "restaurant_id", None),
         restaurant_name=getattr(order, "restaurant_name", None),
@@ -140,6 +141,7 @@ def list_orders(
         result.append(DailyOrderListResponse(
             id=order.id,
             order_date=order_date,
+            name=getattr(order, "name", None),
             status=order.status,
             total_bill=getattr(order, "total_bill", 0) or 0,
             total_bill_chay=getattr(order, "total_bill_chay", 0) or 0,
@@ -151,15 +153,12 @@ def list_orders(
     return result
 
 
-@router.get("/today", response_model=DailyOrderResponse | None)
+@router.get("/today", response_model=list[DailyOrderResponse])
 def get_today_order(db=Depends(get_db), _=Depends(get_current_user)):
-    today = datetime.now(VN_TZ).date()
-    doc = db.collection("daily_orders").document(str(today)).get()
-    if not doc.exists:
-        return None
-    order = _to_ns(doc.to_dict())
-    items = _load_items_with_names(db, order.id)
-    return _build_order_response(order, items)
+    today_str = str(datetime.now(VN_TZ).date())
+    snaps = db.collection("daily_orders").where("order_date", "==", today_str).stream()
+    orders = sorted([_to_ns(s.to_dict()) for s in snaps], key=lambda o: o.created_at)
+    return [_build_order_response(o, _load_items_with_names(db, o.id)) for o in orders]
 
 
 @router.get("/{order_id}", response_model=DailyOrderResponse)
@@ -173,9 +172,8 @@ def get_order(order_id: int, db=Depends(get_db), _=Depends(get_current_user)):
 
 @router.post("", response_model=DailyOrderResponse, status_code=201)
 def create_order(data: DailyOrderCreate, db=Depends(get_db), _=Depends(get_current_admin)):
-    doc_id = str(data.order_date)
-    if db.collection("daily_orders").document(doc_id).get().exists:
-        raise HTTPException(status_code=400, detail="Order for this date already exists")
+    order_id = _next_id(db, "daily_orders")
+    doc_id = str(order_id)  # Use numeric ID as doc ID to allow multiple per day
 
     # Resolve restaurant
     restaurant_id = data.restaurant_id
@@ -189,16 +187,17 @@ def create_order(data: DailyOrderCreate, db=Depends(get_db), _=Depends(get_curre
             if not menu_link:
                 menu_link = r.get("link")
 
-    order_id = _next_id(db, "daily_orders")
     now = datetime.now(timezone.utc)
     # Pre-populate links from restaurant if available
     initial_links = []
     if restaurant_name and menu_link:
         initial_links = [{"label": restaurant_name, "url": menu_link}]
 
+    order_date_str = str(data.order_date)
     order_data = {
         "id": order_id,
-        "order_date": doc_id,
+        "order_date": order_date_str,
+        "name": data.name or None,
         "status": "open",
         "restaurant_id": restaurant_id,
         "restaurant_name": restaurant_name,
@@ -224,7 +223,7 @@ def create_order(data: DailyOrderCreate, db=Depends(get_db), _=Depends(get_curre
         batch.set(ref, {
             "id": item_id,
             "daily_order_id": order_id,
-            "order_date": doc_id,
+            "order_date": order_date_str,
             "member_id": m["id"],
             "dish_name": None,
             "dish_name_chay": None,

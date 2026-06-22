@@ -9,7 +9,9 @@
       "Bash(python *)",
       "Bash(node --input-type=module)",
       "Bash(node -e ' *)",
-      "Bash(grep -n \"formatMoney\\\\|₫\\\\|đồng\\\\|VND\\\\| k\\\\b\\\\|k</\\\\|k</\" D:/PROJECT/LUNCH_WITH_ME/lunch_with_me/frontend/src/app/page.js)"
+      "Bash(grep -n \"formatMoney\\\\|₫\\\\|đồng\\\\|VND\\\\| k\\\\b\\\\|k</\\\\|k</\" D:/PROJECT/LUNCH_WITH_ME/lunch_with_me/frontend/src/app/page.js)",
+      "Bash(gcloud config *)",
+      "Bash(xargs grep -l \"members\")"
     ]
   }
 }

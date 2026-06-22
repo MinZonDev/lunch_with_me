@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import calendar
 
 from app.database import get_db, _next_id, _to_ns
-from app.schemas import DepositCreate, ChargeCreate, DepositResponse, MemberBalanceResponse, DepositHistoryResponse, MemberDailyCost
+from app.schemas import DepositCreate, ChargeCreate, DepositResponse, MemberBalanceResponse, DepositHistoryResponse, MemberDailyCost, SpendingItemResponse
 from app.core.auth import get_current_user, get_current_admin
 
 router = APIRouter(prefix="/api/deposits", tags=["deposits"])
@@ -195,6 +195,49 @@ def delete_deposit(deposit_id: int, db=Depends(get_db), _=Depends(get_current_ad
     if not ref.get().exists:
         raise HTTPException(status_code=404, detail="Deposit not found")
     ref.delete()
+
+
+@router.get("/spending", response_model=list[SpendingItemResponse])
+def get_spending(db=Depends(get_db), current_user=Depends(get_current_user)):
+    """Lịch sử chi tiêu ăn (finalized order items) của user hiện tại."""
+    from datetime import date as date_type
+    mid = getattr(current_user, "member_id", None)
+    if not mid:
+        return []
+
+    finalized_map = {
+        s.to_dict()["id"]: s.to_dict()
+        for s in db.collection("daily_orders").where("status", "==", "finalized").stream()
+    }
+
+    items = [
+        s.to_dict() for s in
+        db.collection("order_items")
+        .where("member_id", "==", mid)
+        .where("is_eating", "==", True)
+        .stream()
+    ]
+
+    result = []
+    for item in items:
+        order = finalized_map.get(item["daily_order_id"])
+        if not order:
+            continue
+        dish = item.get("dish_name") or item.get("dish_name_chay") or "—"
+        order_date_raw = order["order_date"]
+        order_date = date_type.fromisoformat(str(order_date_raw))
+        result.append(SpendingItemResponse(
+            daily_order_id=item["daily_order_id"],
+            order_date=order_date,
+            order_name=order.get("name"),
+            dish_name=dish,
+            is_chay=item.get("is_chay", False),
+            total_cost=item.get("total_cost", 0) or 0,
+            created_at=item.get("created_at") or order.get("created_at"),
+        ))
+
+    result.sort(key=lambda r: r.order_date, reverse=True)
+    return result
 
 
 @router.get("/history", response_model=DepositHistoryResponse)

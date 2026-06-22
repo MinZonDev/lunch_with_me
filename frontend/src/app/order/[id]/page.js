@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, use } from 'react';
-import { ordersAPI, orderItemsAPI, formatMoney, getInitials, formatDate } from '@/lib/api';
+import { ordersAPI, orderItemsAPI, membersAPI, formatMoney, getInitials, formatDate } from '@/lib/api';
 import { isAdmin } from '@/lib/auth';
 import { useToast } from '@/components/Toast';
 import Link from 'next/link';
@@ -10,6 +10,7 @@ export default function OrderDetailPage({ params }) {
   const resolvedParams = use(params);
   const orderId = resolvedParams.id;
   const [order, setOrder] = useState(null);
+  const [memberUsernameMap, setMemberUsernameMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [totalBill, setTotalBill] = useState('');
   const [totalBillChay, setTotalBillChay] = useState('');
@@ -23,10 +24,16 @@ export default function OrderDetailPage({ params }) {
 
   const fetchOrder = useCallback(async () => {
     try {
-      const data = await ordersAPI.get(orderId);
+      const [data, membersList] = await Promise.all([
+        ordersAPI.get(orderId),
+        membersAPI.list().catch(() => []),
+      ]);
       setOrder(data);
       if (data.total_bill) setTotalBill(data.total_bill.toString());
       if (data.total_bill_chay) setTotalBillChay(data.total_bill_chay.toString());
+      setMemberUsernameMap(
+        Object.fromEntries(membersList.filter(m => m.username).map(m => [m.id, m.username]))
+      );
     } catch (err) {
       addToast(err.message, 'error');
     } finally {
@@ -253,7 +260,14 @@ export default function OrderDetailPage({ params }) {
               <div key={item.id} className="order-item eating">
                 <div className="member-avatar">{getInitials(item.member_name)}</div>
                 <div className="item-info">
-                  <div className="member-name">{item.member_name}</div>
+                  <div className="member-name">
+                    {item.member_name}
+                    {admin && memberUsernameMap[item.member_id] && (
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace', marginLeft: '6px' }}>
+                        @{memberUsernameMap[item.member_id]}
+                      </span>
+                    )}
+                  </div>
                   <div className="dish-name">{item.dish_name}</div>
                   {item.note && <div className="dish-name" style={{ fontStyle: 'italic' }}>📝 {item.note}</div>}
                   {item.extra_item_description && (
@@ -315,7 +329,14 @@ export default function OrderDetailPage({ params }) {
                   {getInitials(item.member_name)}
                 </div>
                 <div className="item-info">
-                  <div className="member-name">{item.member_name}</div>
+                  <div className="member-name">
+                    {item.member_name}
+                    {admin && memberUsernameMap[item.member_id] && (
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace', marginLeft: '6px' }}>
+                        @{memberUsernameMap[item.member_id]}
+                      </span>
+                    )}
+                  </div>
                   <div className="dish-name">🥬 {item.dish_name_chay}</div>
                   {item.note && <div className="dish-name" style={{ fontStyle: 'italic' }}>📝 {item.note}</div>}
                 </div>

@@ -104,6 +104,7 @@ class MemberResponse(BaseModel):
     name: str
     is_active: bool
     is_admin: bool
+    username: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -139,7 +140,9 @@ class OrderLinkItem(BaseModel):
 
 class DailyOrderCreate(BaseModel):
     order_date: date
+    name: Optional[str] = None           # Tên menu, VD: "Cơm", "Phở"
     restaurant_id: Optional[int] = None
+    menu_link: Optional[str] = None
     deadline_time: Optional[str] = None  # "HH:MM" VN time, default from config
     note: Optional[str] = None
     created_by: Optional[int] = None
@@ -180,6 +183,7 @@ class OrderItemInOrder(BaseModel):
 class DailyOrderResponse(BaseModel):
     id: int
     order_date: date
+    name: Optional[str] = None
     status: str
     restaurant_id: Optional[int] = None
     restaurant_name: Optional[str] = None
@@ -203,6 +207,7 @@ class DailyOrderResponse(BaseModel):
 class DailyOrderListResponse(BaseModel):
     id: int
     order_date: date
+    name: Optional[str] = None
     status: str
     total_bill: int
     total_bill_chay: int
@@ -361,6 +366,20 @@ class DelegationResponse(BaseModel):
     delegate_member_id: int  # người được ủy quyền
     delegate_name: str
     status: str              # active | revoked
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ============== Spending Schema ==============
+
+class SpendingItemResponse(BaseModel):
+    daily_order_id: int
+    order_date: date
+    order_name: Optional[str] = None
+    dish_name: Optional[str] = None
+    is_chay: bool = False
+    total_cost: int
     created_at: datetime
 
     model_config = {"from_attributes": True}

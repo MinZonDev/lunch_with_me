@@ -49,6 +49,7 @@ def _compute_balances(db):
             "user_id": u["id"],
             "name": u.get("nickname") or u["full_name"],
             "full_name": u["full_name"],
+            "username": u.get("username", ""),
             "email": u.get("email", ""),
             "balance": deposited - charged - spent,
         })
@@ -104,3 +105,58 @@ def update_settings(data: ReminderSettings, db=Depends(get_db), _=Depends(get_cu
     from app.services.scheduler import reschedule_debt_reminder
     reschedule_debt_reminder(data)
     return data
+
+
+@router.post("/send-order-reminder")
+def send_order_reminder_manual(db=Depends(get_db), _=Depends(get_current_admin)):
+    """Admin thủ công nhắc thành viên chưa đặt cơm hôm nay."""
+    from datetime import date
+    from zoneinfo import ZoneInfo
+    from app.services.email_service import send_order_reminder
+
+    vn_tz = ZoneInfo("Asia/Ho_Chi_Minh")
+    today = date.today().isoformat()
+
+    # Find today's open order
+    orders = [s.to_dict() for s in db.collection("daily_orders")
+              .where("order_date", "==", today)
+              .where("status", "==", "open")
+              .limit(1).stream()]
+    if not orders:
+        return {"sent": 0, "message": "Không có đơn hàng nào đang mở hôm nay"}
+
+    order = orders[0]
+    deadline = order.get("order_deadline")
+    if deadline:
+        from datetime import timezone
+        if deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=timezone.utc)
+        deadline_str = deadline.astimezone(vn_tz).strftime("%H:%M")
+    else:
+        deadline_str = "?"
+
+    # Members who have already ordered (is_eating=True)
+    ordered_ids = {
+        s.to_dict()["member_id"]
+        for s in db.collection("order_items")
+        .where("daily_order_id", "==", order["id"])
+        .where("is_eating", "==", True).stream()
+    }
+
+    # Active users with a member link who haven't ordered
+    users = [s.to_dict() for s in db.collection("users").where("is_active", "==", True).stream()]
+    targets = [u for u in users if u.get("member_id") and u.get("email") and u["member_id"] not in ordered_ids]
+
+    order_date_str = date.fromisoformat(today).strftime("%d/%m/%Y")
+    sent = 0
+    for u in targets:
+        send_order_reminder(
+            order_date=order_date_str,
+            deadline_str=deadline_str,
+            member_name=u["full_name"],
+            email=u["email"],
+            frontend_url=settings.frontend_url,
+        )
+        sent += 1
+
+    return {"sent": sent, "message": f"Đã nhắc {sent} người chưa đặt cơm"}

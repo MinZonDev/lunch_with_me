@@ -8,6 +8,7 @@ const EMPTY_FORM = { username: '', password: '', full_name: '', email: '', date_
 
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
+  const [pendingUsers, setPendingUsers] = useState([]);
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -17,8 +18,12 @@ export default function UsersPage() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [u, m] = await Promise.all([authAPI.listUsers(), membersAPI.list(false)]);
-      setUsers(u); setMembers(m);
+      const [u, p, m] = await Promise.all([
+        authAPI.listUsers(),
+        authAPI.listPendingUsers(),
+        membersAPI.list(false),
+      ]);
+      setUsers(u); setPendingUsers(p); setMembers(m);
     } catch (err) { addToast(err.message, 'error'); }
     finally { setLoading(false); }
   }, [addToast]);
@@ -56,6 +61,23 @@ export default function UsersPage() {
     catch (err) { addToast(err.message, 'error'); }
   };
 
+  const handleReactivate = async (id, name) => {
+    if (!confirm(`Kích hoạt lại tài khoản "${name}"?`)) return;
+    try { await authAPI.reactivateUser(id); addToast(`Đã kích hoạt lại ${name}`); fetchAll(); }
+    catch (err) { addToast(err.message, 'error'); }
+  };
+
+  const handleApprove = async (id, name) => {
+    try { await authAPI.approveUser(id); addToast(`Đã duyệt tài khoản ${name}`); fetchAll(); }
+    catch (err) { addToast(err.message, 'error'); }
+  };
+
+  const handleReject = async (id, name) => {
+    if (!confirm(`Từ chối và xóa tài khoản "${name}"?`)) return;
+    try { await authAPI.rejectUser(id); addToast('Đã từ chối tài khoản'); fetchAll(); }
+    catch (err) { addToast(err.message, 'error'); }
+  };
+
   if (loading) return <div className="loading-spinner"><div className="spinner" /></div>;
 
   return (
@@ -66,6 +88,37 @@ export default function UsersPage() {
           <button className="btn btn-primary" onClick={openCreate}>➕ Tạo User</button>
         </div>
       </div>
+
+      {/* Pending approval section */}
+      {pendingUsers.length > 0 && (
+        <div className="card" style={{ borderColor: 'rgba(255,230,109,0.35)', marginBottom: '20px' }}>
+          <div className="card-title" style={{ marginBottom: '14px', color: 'var(--status-locked)' }}>
+            ⏳ Chờ Duyệt ({pendingUsers.length})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {pendingUsers.map(u => (
+              <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: 'var(--bg-input)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{u.full_name}</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>@{u.username}</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{u.email}</div>
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                  {new Date(u.created_at).toLocaleDateString('vi-VN')}
+                </div>
+                <div className="flex gap-8">
+                  <button className="btn btn-sm" style={{ background: 'rgba(6,214,160,0.15)', color: '#06d6a0', border: '1px solid rgba(6,214,160,0.3)' }} onClick={() => handleApprove(u.id, u.full_name)}>
+                    ✅ Duyệt
+                  </button>
+                  <button className="btn btn-danger btn-sm" onClick={() => handleReject(u.id, u.full_name)}>
+                    ✕ Từ chối
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="card">
         <div className="table-wrapper">
@@ -81,11 +134,28 @@ export default function UsersPage() {
                   <td style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{u.email}</td>
                   <td><span className={`badge ${u.role === 'admin' ? 'badge-open' : ''}`}>{u.role === 'admin' ? '👑 Admin' : '👤 User'}</span></td>
                   <td style={{ color: 'var(--text-muted)' }}>{members.find(m => m.id === u.member_id)?.name || '—'}</td>
-                  <td><span className={`badge ${u.is_active ? 'badge-success' : 'badge-debt'}`}>{u.is_active ? 'Active' : 'Inactive'}</span></td>
+                  <td>
+                    {u.is_active
+                      ? <span className="badge badge-success">Active</span>
+                      : u.approved === false
+                        ? <span className="badge" style={{ background: 'rgba(255,230,109,0.15)', color: 'var(--status-locked)', border: '1px solid rgba(255,230,109,0.3)' }}>Chờ duyệt</span>
+                        : <span className="badge badge-debt">Đã khóa</span>
+                    }
+                  </td>
                   <td>
                     <div className="flex gap-8">
                       <button className="btn btn-ghost btn-sm" onClick={() => openEdit(u)}>✏️</button>
-                      {u.is_active && <button className="btn btn-danger btn-sm" onClick={() => handleDeactivate(u.id)}>🚫</button>}
+                      {u.is_active && <button className="btn btn-danger btn-sm" title="Vô hiệu hóa" onClick={() => handleDeactivate(u.id)}>🚫</button>}
+                      {!u.is_active && u.approved !== false && (
+                        <button
+                          className="btn btn-sm"
+                          style={{ background: 'rgba(6,214,160,0.15)', color: '#06d6a0', border: '1px solid rgba(6,214,160,0.3)' }}
+                          title="Kích hoạt lại"
+                          onClick={() => handleReactivate(u.id, u.full_name)}
+                        >
+                          ✅ Kích hoạt lại
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

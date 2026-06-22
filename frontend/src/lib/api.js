@@ -35,6 +35,7 @@ async function fetchAPI(endpoint, options = {}) {
 
 // ============== Auth ==============
 export const authAPI = {
+  sendOtp: (email) => fetchAPI('/api/auth/send-otp', { method: 'POST', body: JSON.stringify({ email }) }),
   register: (data) => fetchAPI('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   login: (data) => fetchAPI('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   me: () => fetchAPI('/api/auth/me'),
@@ -43,9 +44,13 @@ export const authAPI = {
   forgotPassword: (email) => fetchAPI('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
   resetPassword: (token, new_password) => fetchAPI('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, new_password }) }),
   listUsers: () => fetchAPI('/api/auth/users'),
+  listPendingUsers: () => fetchAPI('/api/auth/users/pending'),
   createUser: (data) => fetchAPI('/api/auth/users', { method: 'POST', body: JSON.stringify(data) }),
   updateUser: (id, data) => fetchAPI(`/api/auth/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   updateUserRole: (id, role) => fetchAPI(`/api/auth/users/${id}`, { method: 'PUT', body: JSON.stringify({ role }) }),
+  approveUser: (id) => fetchAPI(`/api/auth/users/${id}/approve`, { method: 'POST' }),
+  rejectUser: (id) => fetchAPI(`/api/auth/users/${id}/reject`, { method: 'POST' }),
+  reactivateUser: (id) => fetchAPI(`/api/auth/users/${id}/reactivate`, { method: 'POST' }),
   deleteUser: (id) => fetchAPI(`/api/auth/users/${id}`, { method: 'DELETE' }),
 };
 
@@ -111,8 +116,16 @@ export const restaurantsAPI = {
 export const remindersAPI = {
   debtors: () => fetchAPI('/api/reminders/debtors'),
   send: (member_id = null) => fetchAPI('/api/reminders/send', { method: 'POST', body: JSON.stringify({ member_id }) }),
+  sendOrderReminder: () => fetchAPI('/api/reminders/send-order-reminder', { method: 'POST' }),
   getSettings: () => fetchAPI('/api/reminders/settings'),
   saveSettings: (data) => fetchAPI('/api/reminders/settings', { method: 'PUT', body: JSON.stringify(data) }),
+};
+
+// ============== Delegations ==============
+export const delegationsAPI = {
+  list: () => fetchAPI('/api/delegations'),
+  grant: (delegate_member_id) => fetchAPI('/api/delegations', { method: 'POST', body: JSON.stringify({ delegate_member_id }) }),
+  revoke: (id) => fetchAPI(`/api/delegations/${id}`, { method: 'DELETE' }),
 };
 
 // ============== Reviews ==============
@@ -125,7 +138,7 @@ export const reviewsAPI = {
 // ============== Helpers ==============
 export function formatMoney(amount) {
   if (amount === null || amount === undefined) return '0';
-  return Number(amount).toLocaleString('vi-VN');
+  return (Number(amount) * 1000).toLocaleString('vi-VN');
 }
 
 export function formatDate(dateStr) {
@@ -147,6 +160,7 @@ export function formatDateShort(dateStr) {
 }
 
 export function getInitials(name) {
+  if (!name) return '?';
   return name
     .split(' ')
     .map((w) => w[0])

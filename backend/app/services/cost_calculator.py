@@ -5,13 +5,33 @@ Logic:
 1. Filter members who are eating (is_eating=True)
 2. Separate into regular and chay groups
 3. For each group:
-   a. Sum up all extra item costs
-   b. Shared pool = total_bill - total_extras
-   c. Per person share = shared_pool / num_eaters (rounded)
-   d. Each person pays = share + their extra cost
+   a. totalExtra = sum of extra_item_cost from all eaters
+   b. baseShare = (totalBill - totalExtra) / num_eaters
+   c. amountToPay = baseShare + user.extra_item_cost
 """
 
-import math
+from decimal import Decimal, ROUND_HALF_UP
+
+
+def _split_bill(total_bill: float, users: list) -> list:
+    """
+    Split total_bill among users based on their extra costs.
+
+    Each user dict must have an 'extra_item_cost' key (defaults to 0).
+    Returns a list of amounts to pay, one per user, as integers.
+
+    Example: total_bill=105, users with extraCost [0, 10, 5]
+      totalExtra=15, baseShare=30 => payments [30, 40, 35]
+    """
+    total = Decimal(str(total_bill))
+    extras = [Decimal(str(u.get("extra_item_cost", 0) or 0)) for u in users]
+    total_extra = sum(extras)
+    n = len(users)
+    base_share = (total - total_extra) / n
+    return [
+        int((base_share + extra).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        for extra in extras
+    ]
 
 
 def calculate_costs(daily_order, items: list) -> dict:
@@ -32,22 +52,30 @@ def calculate_costs(daily_order, items: list) -> dict:
     total_bill_chay = getattr(daily_order, "total_bill_chay", 0) or 0
 
     if regular_eaters and total_bill > 0:
-        total_extras = sum(getattr(i, "extra_item_cost", 0) or 0 for i in regular_eaters)
-        shared_pool = total_bill - total_extras
-        per_person = math.ceil(shared_pool / len(regular_eaters)) if regular_eaters else 0
-        result["shared_cost_per_person"] = per_person
-        for item in regular_eaters:
-            total = per_person + (getattr(item, "extra_item_cost", 0) or 0)
-            result["item_costs"].append({"item_id": item.id, "member_id": item.member_id, "total_cost": total})
+        user_dicts = [{"extra_item_cost": getattr(i, "extra_item_cost", 0) or 0} for i in regular_eaters]
+        total_extra = sum(d["extra_item_cost"] for d in user_dicts)
+        base_share = int(
+            (Decimal(str(total_bill)) - Decimal(str(total_extra)))
+            .quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            / len(regular_eaters)
+        )
+        result["shared_cost_per_person"] = base_share
+        payments = _split_bill(total_bill, user_dicts)
+        for item, amount in zip(regular_eaters, payments):
+            result["item_costs"].append({"item_id": item.id, "member_id": item.member_id, "total_cost": amount})
 
     if chay_eaters and total_bill_chay > 0:
-        total_extras_chay = sum(getattr(i, "extra_item_cost", 0) or 0 for i in chay_eaters)
-        shared_pool_chay = total_bill_chay - total_extras_chay
-        per_person_chay = math.ceil(shared_pool_chay / len(chay_eaters)) if chay_eaters else 0
-        result["shared_cost_per_person_chay"] = per_person_chay
-        for item in chay_eaters:
-            total = per_person_chay + (getattr(item, "extra_item_cost", 0) or 0)
-            result["item_costs"].append({"item_id": item.id, "member_id": item.member_id, "total_cost": total})
+        user_dicts_chay = [{"extra_item_cost": getattr(i, "extra_item_cost", 0) or 0} for i in chay_eaters]
+        total_extra_chay = sum(d["extra_item_cost"] for d in user_dicts_chay)
+        base_share_chay = int(
+            (Decimal(str(total_bill_chay)) - Decimal(str(total_extra_chay)))
+            .quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            / len(chay_eaters)
+        )
+        result["shared_cost_per_person_chay"] = base_share_chay
+        payments_chay = _split_bill(total_bill_chay, user_dicts_chay)
+        for item, amount in zip(chay_eaters, payments_chay):
+            result["item_costs"].append({"item_id": item.id, "member_id": item.member_id, "total_cost": amount})
 
     for item in items:
         if not item.is_eating:

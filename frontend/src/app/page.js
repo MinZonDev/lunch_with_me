@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ordersAPI, orderItemsAPI, membersAPI, restaurantsAPI, formatMoney, getInitials, getTodayString } from '@/lib/api';
+import { ordersAPI, orderItemsAPI, membersAPI, restaurantsAPI, delegationsAPI, formatMoney, getInitials, getTodayString } from '@/lib/api';
 import { useToast } from '@/components/Toast';
 import { isAdmin, getUser } from '@/lib/auth';
+import logger from '@/lib/logger';
 import Link from 'next/link';
 
 function useCountdown(deadlineUtcStr) {
@@ -33,8 +34,11 @@ export default function HomePage() {
   const [restaurants, setRestaurants] = useState([]);
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
   const [deadlineTime, setDeadlineTime] = useState('11:30');
+  // member_ids I am allowed to order for (my own + delegated to me)
+  const [allowedMemberIds, setAllowedMemberIds] = useState(new Set());
   const addToast = useToast();
   const admin = isAdmin();
+  const currentUser = getUser();
 
   const minutesLeft = useCountdown(todayOrder?.order_deadline);
   const deadlinePassed = minutesLeft !== null && minutesLeft <= 0;
@@ -42,16 +46,26 @@ export default function HomePage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [order, membersList, restaurantList] = await Promise.all([
+      const [order, membersList, restaurantList, delegationList] = await Promise.all([
         ordersAPI.getToday(),
         membersAPI.list(),
         restaurantsAPI.list().catch(() => []),
+        delegationsAPI.list().catch(() => []),
       ]);
       setTodayOrder(order);
       setMembers(membersList);
       setRestaurants(restaurantList);
+
+      // Build set of member_ids this user can order for
+      const myMemberId = currentUser?.member_id;
+      const allowed = new Set();
+      if (myMemberId) allowed.add(myMemberId);
+      delegationList
+        .filter(d => d.delegate_member_id === myMemberId && d.status === 'active')
+        .forEach(d => allowed.add(d.grantor_member_id));
+      setAllowedMemberIds(allowed);
     } catch (err) {
-      console.error('Failed to fetch data:', err);
+      logger.error('Failed to fetch home data', { error: err.message });
     } finally {
       setLoading(false);
     }
@@ -94,9 +108,13 @@ export default function HomePage() {
         is_chay: isChay,
       });
       setDishName(''); setDishNote(''); setSelectedMember(null);
-      addToast('Đã chọn món! 🍚');
+      const isProxy = selectedMember !== currentUser?.member_id;
+      addToast(isProxy ? 'Đã đặt món giùm! 🤝' : 'Đã chọn món! 🍚');
       fetchData();
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) {
+      logger.error('Submit dish failed', { member_id: selectedMember, error: err.message });
+      addToast(err.message, 'error');
+    }
   };
 
   const handleCancelItem = async (itemId) => {
@@ -104,7 +122,10 @@ export default function HomePage() {
       await orderItemsAPI.delete(todayOrder.id, itemId);
       addToast('Đã hủy chọn món');
       fetchData();
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) {
+      logger.error('Cancel item failed', { itemId, error: err.message });
+      addToast(err.message, 'error');
+    }
   };
 
   if (loading) return <div className="loading-spinner"><div className="spinner" /></div>;
@@ -259,22 +280,37 @@ export default function HomePage() {
           <div className="card">
             <div className="card-title" style={{ marginBottom: '16px' }}>✏️ Chọn Món</div>
             <div className="form-group">
-              <label className="form-label">Bạn là ai?</label>
+              <label className="form-label">
+                Đặt cho ai?
+                {!admin && (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400, marginLeft: '6px' }}>
+                    (chỉ bản thân + người đã ủy quyền)
+                  </span>
+                )}
+              </label>
               <div className="member-select-grid">
-                {members.map(m => {
+                {(admin ? members : members.filter(m => allowedMemberIds.has(m.id))).map(m => {
                   const hasOrdered = eatingItems.some(i => i.member_id === m.id);
+                  const isProxy = m.id !== currentUser?.member_id;
                   return (
                     <button
                       key={m.id}
                       className={`member-select-item ${selectedMember === m.id ? 'selected' : ''}`}
                       onClick={() => setSelectedMember(m.id)}
                       style={hasOrdered ? { opacity: 0.5, borderColor: 'var(--status-success)' } : {}}
+                      title={isProxy ? `Đặt giùm ${m.name} (được ủy quyền)` : m.name}
                     >
-                      {hasOrdered ? '✅ ' : ''}{m.name}
+                      {hasOrdered ? '✅ ' : ''}{m.name}{isProxy ? ' 🤝' : ''}
                     </button>
                   );
                 })}
               </div>
+              {!admin && allowedMemberIds.size <= 1 && (
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+                  Muốn đặt giùm người khác?{' '}
+                  <a href="/delegation" style={{ color: 'var(--accent-primary)' }}>Yêu cầu ủy quyền →</a>
+                </p>
+              )}
             </div>
             <div className="form-group">
               <label className="form-label">Loại</label>

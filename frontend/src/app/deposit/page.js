@@ -40,7 +40,7 @@ function BankQR({ amount = 0, info = '' }) {
           <strong style={{ fontSize: '1rem', letterSpacing: 1, color: '#ffe66d' }}>{BANK.account}</strong>
         </span>
         {info && <span><span style={{ color: 'var(--text-muted)' }}>ND:</span> <strong>{info}</strong></span>}
-        {amount > 0 && <span><span style={{ color: 'var(--text-muted)' }}>Số tiền:</span> <strong style={{ color: '#ff8c42' }}>{Number(amount).toLocaleString('vi-VN')}k</strong></span>}
+        {amount > 0 && <span><span style={{ color: 'var(--text-muted)' }}>Số tiền:</span> <strong style={{ color: '#ff8c42' }}>{(Number(amount) * 1000).toLocaleString('vi-VN')} đ</strong></span>}
       </div>
     </div>
   );
@@ -271,6 +271,9 @@ export default function DepositPage() {
                 </div>
                 <div>
                   <div style={{ fontWeight: '600' }}>{member.name}</div>
+                  {member.username && (
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>@{member.username}</div>
+                  )}
                   <span className={`badge ${member.balance >= 0 ? 'badge-credit' : 'badge-debt'}`}>
                     {member.balance >= 0 ? 'Còn dư' : 'Đang nợ'}
                   </span>

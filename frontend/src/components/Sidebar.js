@@ -17,6 +17,7 @@ export default function Sidebar({ isOpen, onClose }) {
     { href: '/deposit', icon: '💰', label: 'Deposit' },
     { href: '/reports', icon: '📊', label: 'Báo Cáo' },
     { href: '/reviews', icon: '⭐', label: 'Review Món' },
+    { href: '/delegation', icon: '🤝', label: 'Ủy Quyền' },
     { href: '/profile', icon: '👤', label: 'Hồ Sơ' },
   ];
 

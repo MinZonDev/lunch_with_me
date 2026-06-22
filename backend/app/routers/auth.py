@@ -1,11 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from datetime import datetime, timezone
 
+import logging
+import random
+import string
+
 from app.database import get_db, _next_id, _doc_ns
 from app.schemas import (
     LoginRequest, TokenResponse, UserCreate, UserUpdate, UserResponse,
     ChangePasswordRequest, RegisterRequest, ForgotPasswordRequest, ResetPasswordRequest,
+    SendOtpRequest, RegisterPendingResponse,
 )
+
+logger = logging.getLogger("lwm.auth")
 from app.core.auth import (
     hash_password, verify_password, create_access_token,
     get_current_user, get_current_admin,
@@ -32,6 +39,7 @@ def _user_response(u) -> UserResponse:
         avatar_url=getattr(u, "avatar_url", None),
         role=u.role,
         is_active=u.is_active,
+        approved=getattr(u, "approved", True),
         member_id=getattr(u, "member_id", None),
         created_at=u.created_at,
     )
@@ -50,13 +58,79 @@ def _auto_create_member(db, full_name: str) -> int:
     return member_id
 
 
-@router.post("/register", response_model=TokenResponse, status_code=201)
+def _generate_otp() -> str:
+    return "".join(random.choices(string.digits, k=6))
+
+
+def _verify_otp(db, email: str, code: str) -> None:
+    """Raise HTTPException if OTP is invalid, expired, or already used."""
+    from datetime import timezone
+    doc = db.collection("otp_tokens").document(email).get()
+    if not doc.exists:
+        raise HTTPException(status_code=400, detail="Mã OTP không hợp lệ. Vui lòng yêu cầu gửi lại.")
+
+    otp = doc.to_dict()
+    if otp.get("used"):
+        raise HTTPException(status_code=400, detail="Mã OTP đã được sử dụng. Vui lòng yêu cầu gửi lại.")
+
+    expires_at = otp["expires_at"]
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=400, detail="Mã OTP đã hết hạn (10 phút). Vui lòng yêu cầu gửi lại.")
+
+    if otp.get("code") != code:
+        raise HTTPException(status_code=400, detail="Mã OTP không đúng.")
+
+    db.collection("otp_tokens").document(email).update({"used": True})
+
+
+@router.post("/send-otp", status_code=200)
+def send_otp(data: SendOtpRequest, db=Depends(get_db)):
+    """Gửi OTP 6 chữ số tới email để xác thực trước khi đăng ký."""
+    from datetime import timedelta, timezone
+    from app.services.email_service import send_otp_email
+
+    # Check email not already registered
+    if list(db.collection("users").where("email", "==", data.email).limit(1).stream()):
+        raise HTTPException(status_code=400, detail="Email này đã được đăng ký.")
+
+    # Rate-limit: block if an unused, non-expired OTP was sent < 60s ago
+    existing = db.collection("otp_tokens").document(data.email).get()
+    if existing.exists:
+        otp_data = existing.to_dict()
+        created_at = otp_data.get("created_at")
+        if created_at:
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            age_seconds = (datetime.now(timezone.utc) - created_at).total_seconds()
+            if age_seconds < 60 and not otp_data.get("used"):
+                raise HTTPException(status_code=429, detail="Vui lòng chờ 60 giây trước khi gửi lại.")
+
+    code = _generate_otp()
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+    db.collection("otp_tokens").document(data.email).set({
+        "email": data.email,
+        "code": code,
+        "expires_at": expires_at,
+        "used": False,
+        "created_at": datetime.now(timezone.utc),
+    })
+
+    send_otp_email(data.email, code)
+    logger.info("OTP sent to %s", data.email)
+    return {"message": "Mã OTP đã được gửi tới email của bạn."}
+
+
+@router.post("/register", response_model=RegisterPendingResponse, status_code=201)
 def register(data: RegisterRequest, db=Depends(get_db)):
-    """Public self-registration. Auto-creates a linked member entry."""
+    """Public self-registration. Account is inactive until admin approves."""
     if list(db.collection("users").where("username", "==", data.username).limit(1).stream()):
         raise HTTPException(status_code=400, detail="Username đã tồn tại")
     if list(db.collection("users").where("email", "==", data.email).limit(1).stream()):
         raise HTTPException(status_code=400, detail="Email đã tồn tại")
+
+    _verify_otp(db, data.email, data.otp_code)
 
     member_id = _auto_create_member(db, data.full_name)
 
@@ -70,28 +144,36 @@ def register(data: RegisterRequest, db=Depends(get_db)):
         "email": data.email,
         "date_of_birth": str(data.date_of_birth) if data.date_of_birth else None,
         "role": "user",
-        "is_active": True,
+        "is_active": False,   # pending admin approval
+        "approved": False,
         "member_id": member_id,
         "created_at": now,
     }
     db.collection("users").document(str(user_id)).set(doc_data)
-
-    token = create_access_token({"sub": str(user_id), "role": "user"})
-    from app.database import _doc_ns
-    user = _doc_ns(db.collection("users").document(str(user_id)).get())
-    return TokenResponse(access_token=token, user=_user_response(user))
+    logger.info("New user registered (pending): %s <%s>", data.username, data.email)
+    return RegisterPendingResponse(
+        message="Tài khoản đã được tạo, vui lòng chờ admin duyệt trước khi đăng nhập.",
+        username=data.username,
+        email=data.email,
+    )
 
 
 @router.post("/login", response_model=TokenResponse)
 def login(data: LoginRequest, db=Depends(get_db)):
-    results = list(db.collection("users").where("username", "==", data.username).where("is_active", "==", True).limit(1).stream())
+    results = list(db.collection("users").where("username", "==", data.username).limit(1).stream())
     if not results:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sai username hoặc mật khẩu")
     user = _doc_ns(results[0])
     if not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sai username hoặc mật khẩu")
+    if not user.is_active:
+        # approved=False → pending; approved=True (or missing, backward-compat) → deactivated
+        if not getattr(user, "approved", True):
+            raise HTTPException(status_code=403, detail="PENDING_APPROVAL")
+        raise HTTPException(status_code=403, detail="INACTIVE_ACCOUNT")
 
     token = create_access_token({"sub": str(user.id), "role": user.role})
+    logger.info("User %s logged in", user.username)
     return TokenResponse(access_token=token, user=_user_response(user))
 
 
@@ -163,7 +245,8 @@ def forgot_password(data: ForgotPasswordRequest, db=Depends(get_db)):
     })
 
     from app.core.config import settings
-    frontend_url = getattr(settings, "frontend_url", "http://localhost:3000")
+    from app.core.config import settings as cfg
+    frontend_url = cfg.frontend_url
     reset_url = f"{frontend_url}/reset-password?token={token}"
     send_reset_password(user["full_name"], user["email"], reset_url)
 
@@ -209,6 +292,9 @@ def create_user(data: UserCreate, db=Depends(get_db), _=Depends(get_current_admi
     if list(db.collection("users").where("email", "==", data.email).limit(1).stream()):
         raise HTTPException(status_code=400, detail="Email đã tồn tại")
 
+    # Auto-create member if not explicitly linked
+    member_id = data.member_id or _auto_create_member(db, data.full_name)
+
     user_id = _next_id(db, "users")
     now = datetime.now(timezone.utc)
     doc_data = {
@@ -220,7 +306,7 @@ def create_user(data: UserCreate, db=Depends(get_db), _=Depends(get_current_admi
         "date_of_birth": str(data.date_of_birth) if data.date_of_birth else None,
         "role": data.role,
         "is_active": True,
-        "member_id": data.member_id,
+        "member_id": member_id,
         "created_at": now,
     }
     db.collection("users").document(str(user_id)).set(doc_data)
@@ -268,3 +354,68 @@ def deactivate_user(user_id: int, db=Depends(get_db), current_admin=Depends(get_
     if not ref.get().exists:
         raise HTTPException(status_code=404, detail="User not found")
     ref.update({"is_active": False})
+
+
+# ---- Pending approval ----
+
+@router.get("/users/pending", response_model=list[UserResponse])
+def list_pending_users(db=Depends(get_db), _=Depends(get_current_admin)):
+    """Danh sách tài khoản chờ admin duyệt."""
+    snaps = db.collection("users").where("approved", "==", False).stream()
+    users = [_doc_ns(s) for s in snaps]
+    users.sort(key=lambda u: u.created_at, reverse=True)
+    return [_user_response(u) for u in users]
+
+
+@router.post("/users/{user_id}/approve", response_model=UserResponse)
+def approve_user(user_id: int, db=Depends(get_db), _=Depends(get_current_admin)):
+    """Admin duyệt tài khoản — kích hoạt để user đăng nhập được."""
+    ref = db.collection("users").document(str(user_id))
+    doc = ref.get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="User not found")
+    ref.update({"is_active": True, "approved": True})
+    user = _doc_ns(ref.get())
+    logger.info("Admin approved user %s <%s>", user.username, user.email)
+    try:
+        from app.services.email_service import send_account_approved
+        from app.core.config import settings
+        send_account_approved(user.full_name, user.email, settings.frontend_url)
+    except Exception as e:
+        logger.warning("Could not send approval email: %s", e)
+    return _user_response(user)
+
+
+@router.post("/users/{user_id}/reject", status_code=204)
+def reject_user(user_id: int, db=Depends(get_db), _=Depends(get_current_admin)):
+    """Admin từ chối — xóa tài khoản và member tự động tạo."""
+    ref = db.collection("users").document(str(user_id))
+    doc = ref.get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="User not found")
+    d = doc.to_dict()
+    if d.get("approved", True):
+        raise HTTPException(status_code=400, detail="Chỉ từ chối được tài khoản đang chờ duyệt")
+    member_id = d.get("member_id")
+    ref.delete()
+    if member_id:
+        db.collection("members").document(str(member_id)).delete()
+    logger.info("Admin rejected and deleted user %s", d.get("username"))
+
+
+@router.post("/users/{user_id}/reactivate", response_model=UserResponse)
+def reactivate_user(user_id: int, db=Depends(get_db), _=Depends(get_current_admin)):
+    """Admin kích hoạt lại tài khoản đã bị vô hiệu hóa."""
+    ref = db.collection("users").document(str(user_id))
+    doc = ref.get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="User not found")
+    d = doc.to_dict()
+    if d.get("is_active"):
+        raise HTTPException(status_code=400, detail="Tài khoản đang hoạt động bình thường")
+    if not d.get("approved", True):
+        raise HTTPException(status_code=400, detail="Tài khoản chưa được duyệt lần đầu, dùng endpoint /approve")
+    ref.update({"is_active": True})
+    user = _doc_ns(ref.get())
+    logger.info("Admin reactivated user %s", user.username)
+    return _user_response(user)

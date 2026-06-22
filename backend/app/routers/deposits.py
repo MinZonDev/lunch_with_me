@@ -36,6 +36,9 @@ def get_deposit_summary(db=Depends(get_db), current_user=Depends(get_current_use
             [s.to_dict() for s in db.collection("members").where("is_active", "==", True).stream()],
             key=lambda m: m["name"],
         )
+        # Build member_id → user info map for admin view
+        all_users = [s.to_dict() for s in db.collection("users").where("is_active", "==", True).stream()]
+        user_map = {u["member_id"]: u for u in all_users if u.get("member_id")}
     else:
         # Only show the current user's member
         mid = getattr(current_user, "member_id", None)
@@ -43,6 +46,7 @@ def get_deposit_summary(db=Depends(get_db), current_user=Depends(get_current_use
             return []
         doc = db.collection("members").document(str(mid)).get()
         members = [doc.to_dict()] if doc.exists else []
+        user_map = {}
 
     all_txns = [s.to_dict() for s in db.collection("deposits").stream()]
     all_items = [s.to_dict() for s in db.collection("order_items").where("is_eating", "==", True).stream()]
@@ -61,9 +65,12 @@ def get_deposit_summary(db=Depends(get_db), current_user=Depends(get_current_use
             i["total_cost"] for i in all_items
             if i["member_id"] == mid and i["daily_order_id"] in finalized_ids
         )
+        u = user_map.get(mid)
         result.append(MemberBalanceResponse(
             id=mid,
             name=m["name"],
+            username=u.get("username") if u else None,
+            email=u.get("email") if u else None,
             total_deposited=total_deposited,
             total_charged=total_charged,
             total_spent=total_spent,

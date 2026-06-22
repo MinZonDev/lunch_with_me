@@ -55,15 +55,18 @@ def send_monthly_statement(month: int, year: int, member_name: str, email: str,
                            days_eaten: int, total_cost: int, balance: int):
     subject = f"📊 Sao kê tháng {month}/{year} - Lunch With Me"
     status_color = "#06d6a0" if balance >= 0 else "#ff6b6b"
-    status_text = f"Còn dư <strong style='color:{status_color}'>{balance}k</strong>" if balance >= 0 \
-        else f"Đang nợ <strong style='color:{status_color}'>{abs(balance)}k</strong>"
+    balance_vnd = f"{balance * 1000:,}".replace(",", ".")
+    abs_balance_vnd = f"{abs(balance) * 1000:,}".replace(",", ".")
+    total_cost_vnd = f"{total_cost * 1000:,}".replace(",", ".")
+    status_text = f"Còn dư <strong style='color:{status_color}'>{balance_vnd} đ</strong>" if balance >= 0 \
+        else f"Đang nợ <strong style='color:{status_color}'>{abs_balance_vnd} đ</strong>"
     html = f"""
     <div style="font-family:sans-serif;max-width:480px;margin:auto;background:#1a1a2e;color:#f0f0f5;padding:32px;border-radius:16px">
       <h2 style="color:#ff8c42">📊 Sao Kê Tháng {month}/{year}</h2>
       <p>Xin chào <strong>{member_name}</strong>,</p>
       <table style="width:100%;border-collapse:collapse;margin:16px 0">
         <tr><td style="padding:8px 0;color:#a0a0b8">Số ngày ăn</td><td style="text-align:right;font-weight:700">{days_eaten} ngày</td></tr>
-        <tr><td style="padding:8px 0;color:#a0a0b8">Tổng chi phí</td><td style="text-align:right;font-weight:700">{total_cost}k</td></tr>
+        <tr><td style="padding:8px 0;color:#a0a0b8">Tổng chi phí</td><td style="text-align:right;font-weight:700">{total_cost_vnd} đ</td></tr>
         <tr style="border-top:1px solid rgba(255,255,255,0.1)">
           <td style="padding:8px 0;color:#a0a0b8">Số dư hiện tại</td>
           <td style="text-align:right;font-weight:700">{status_text}</td>
@@ -100,7 +103,7 @@ def send_debt_reminder(full_name: str, email: str, balance: int, frontend_url: s
       <p style="color:#a0a0b8;font-size:13px;margin:0 0 20px">Hệ thống đặt cơm nhóm</p>
 
       <p>Xin chào <strong>{full_name}</strong>,</p>
-      <p>Bạn hiện đang <strong style="color:#ff6b6b;font-size:1.1em">nợ {abs(balance):,}k</strong> tiền cơm. Vui lòng làm theo 2 bước bên dưới.</p>
+      <p>Bạn hiện đang <strong style="color:#ff6b6b;font-size:1.1em">nợ {abs(balance) * 1000:,} đ</strong> tiền cơm. Vui lòng làm theo 2 bước bên dưới.</p>
 
       <!-- Step 1: Bank transfer -->
       <div style="background:rgba(255,140,66,0.08);border:1px solid rgba(255,140,66,0.25);border-radius:12px;padding:20px;margin:20px 0">
@@ -118,7 +121,7 @@ def send_debt_reminder(full_name: str, email: str, balance: int, frontend_url: s
           <tr><td style="color:#a0a0b8;padding:5px 0;width:130px">Ngân hàng</td><td style="font-weight:600">Vikki Digital Bank</td></tr>
           <tr><td style="color:#a0a0b8;padding:5px 0">Chủ tài khoản</td><td style="font-weight:600">{cfg.bank_account_name}</td></tr>
           <tr><td style="color:#a0a0b8;padding:5px 0">Số tài khoản</td><td style="font-weight:700;font-size:1.1em;letter-spacing:1.5px;color:#ffe66d">{cfg.bank_account}</td></tr>
-          <tr><td style="color:#a0a0b8;padding:5px 0">Số tiền gợi ý</td><td style="font-weight:700;color:#ff8c42">{abs(balance):,}k</td></tr>
+          <tr><td style="color:#a0a0b8;padding:5px 0">Số tiền gợi ý</td><td style="font-weight:700;color:#ff8c42">{abs(balance) * 1000:,} đ</td></tr>
           <tr><td style="color:#a0a0b8;padding:5px 0">Nội dung CK</td><td style="font-weight:600">{transfer_info}</td></tr>
         </table>
       </div>
@@ -136,6 +139,45 @@ def send_debt_reminder(full_name: str, email: str, balance: int, frontend_url: s
       <p style="color:#6b6b80;font-size:12px;margin-top:20px;border-top:1px solid rgba(255,255,255,0.07);padding-top:14px">
         Thông báo tự động · Lunch With Me. Nếu bạn đã nạp tiền, hãy bỏ qua email này.
       </p>
+    </div>
+    """
+    _send(email, subject, html)
+
+
+def send_account_approved(full_name: str, email: str, frontend_url: str = ""):
+    subject = "✅ Tài khoản đã được duyệt - Lunch With Me"
+    login_url = f"{frontend_url}/login" if frontend_url else "/login"
+    html = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;background:#1a1a2e;color:#f0f0f5;padding:32px;border-radius:16px">
+      <h2 style="color:#ff8c42">🍱 Lunch With Me</h2>
+      <p>Xin chào <strong>{full_name}</strong>,</p>
+      <p>Tài khoản của bạn đã được <strong style="color:#06d6a0">admin duyệt</strong>. Bạn có thể đăng nhập ngay bây giờ!</p>
+      <a href="{login_url}" style="display:inline-block;background:#06d6a0;color:#0a0a0f;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin-top:8px">
+        Đăng Nhập Ngay →
+      </a>
+      <p style="color:#6b6b80;font-size:12px;margin-top:24px">Lunch With Me — Hệ thống đặt cơm nhóm</p>
+    </div>
+    """
+    _send(email, subject, html)
+
+
+def send_otp_email(email: str, code: str, full_name: str = "bạn"):
+    subject = "🔐 Mã OTP xác thực - Lunch With Me"
+    html = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;background:#1a1a2e;color:#f0f0f5;padding:32px;border-radius:16px">
+      <h2 style="color:#ff8c42">🍱 Lunch With Me</h2>
+      <p>Xin chào <strong>{full_name}</strong>,</p>
+      <p>Đây là mã OTP để xác thực email đăng ký tài khoản của bạn:</p>
+      <div style="text-align:center;margin:24px 0">
+        <span style="font-size:2.4rem;font-weight:900;letter-spacing:10px;color:#ffe66d;background:rgba(255,230,109,0.1);padding:16px 24px;border-radius:12px;display:inline-block;border:1px solid rgba(255,230,109,0.25)">
+          {code}
+        </span>
+      </div>
+      <p style="color:#a0a0b8;font-size:0.875rem">
+        Mã có hiệu lực trong <strong style="color:#f0f0f5">10 phút</strong>.
+        Nếu bạn không thực hiện đăng ký, hãy bỏ qua email này.
+      </p>
+      <p style="color:#6b6b80;font-size:12px;margin-top:24px">Lunch With Me — Hệ thống đặt cơm nhóm</p>
     </div>
     """
     _send(email, subject, html)
@@ -164,7 +206,7 @@ def send_low_balance_alert(member_name: str, email: str, balance: int):
     <div style="font-family:sans-serif;max-width:480px;margin:auto;background:#1a1a2e;color:#f0f0f5;padding:32px;border-radius:16px">
       <h2 style="color:#ff8c42">⚠️ Số Dư Sắp Hết</h2>
       <p>Xin chào <strong>{member_name}</strong>,</p>
-      <p>Số dư của bạn còn <strong style="color:#ffe66d">{balance}k</strong>, sắp không đủ để ăn.</p>
+      <p>Số dư của bạn còn <strong style="color:#ffe66d">{balance * 1000:,} đ</strong>, sắp không đủ để ăn.</p>
       <p>Hãy nạp thêm tiền để tránh bị gián đoạn nhé!</p>
       <p style="color:#6b6b80;font-size:12px;margin-top:24px">Thông báo tự động từ hệ thống Lunch With Me.</p>
     </div>

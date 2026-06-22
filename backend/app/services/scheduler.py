@@ -210,7 +210,6 @@ def reschedule_debt_reminder(cfg):
 
 
 def start_scheduler():
-    _scheduler.add_job(_job_deadline_reminder, "interval", minutes=5, id="deadline_reminder")
     _scheduler.add_job(_job_auto_lock_past_deadline, CronTrigger(hour=12, minute=5, timezone=VN_TZ), id="auto_lock")
     _scheduler.add_job(_job_monthly_statement, CronTrigger(day=1, hour=8, timezone=VN_TZ), id="monthly_statement")
 

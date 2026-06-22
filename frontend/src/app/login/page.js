@@ -12,6 +12,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isPending, setIsPending] = useState(false);
+  const [isDeactivated, setIsDeactivated] = useState(false);
 
   useEffect(() => {
     if (isLoggedIn()) router.replace('/');
@@ -23,12 +25,20 @@ export default function LoginPage() {
 
     setLoading(true);
     setError('');
+    setIsPending(false);
+    setIsDeactivated(false);
     try {
       const res = await authAPI.login({ username: username.trim(), password });
       setAuth(res.access_token, res.user);
       router.replace('/');
     } catch (err) {
-      setError(err.message || 'Đăng nhập thất bại');
+      if (err.message === 'PENDING_APPROVAL') {
+        setIsPending(true);
+      } else if (err.message === 'INACTIVE_ACCOUNT') {
+        setIsDeactivated(true);
+      } else {
+        setError(err.message || 'Đăng nhập thất bại');
+      }
     } finally {
       setLoading(false);
     }
@@ -44,6 +54,16 @@ export default function LoginPage() {
         </div>
 
         <form onSubmit={handleLogin} className="login-form">
+          {isPending && (
+            <div className="login-pending">
+              ⏳ Tài khoản của bạn đang <strong>chờ admin duyệt</strong>. Bạn sẽ nhận email khi được kích hoạt.
+            </div>
+          )}
+          {isDeactivated && (
+            <div className="login-deactivated">
+              🚫 Tài khoản này đã bị <strong>vô hiệu hóa</strong>. Vui lòng liên hệ admin để được hỗ trợ.
+            </div>
+          )}
           {error && (
             <div className="login-error">
               ⚠️ {error}
@@ -143,6 +163,24 @@ export default function LoginPage() {
           gap: 16px;
         }
 
+        .login-pending {
+          background: rgba(255, 230, 109, 0.08);
+          border: 1px solid rgba(255, 230, 109, 0.3);
+          border-radius: var(--radius-md);
+          padding: 12px 16px;
+          color: var(--status-locked);
+          font-size: 0.875rem;
+          line-height: 1.5;
+        }
+        .login-deactivated {
+          background: rgba(255, 107, 107, 0.08);
+          border: 1px solid rgba(255, 107, 107, 0.35);
+          border-radius: var(--radius-md);
+          padding: 12px 16px;
+          color: #ff6b6b;
+          font-size: 0.875rem;
+          line-height: 1.5;
+        }
         .login-error {
           background: rgba(255, 107, 107, 0.1);
           border: 1px solid rgba(255, 107, 107, 0.3);

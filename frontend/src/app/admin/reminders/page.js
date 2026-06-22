@@ -25,9 +25,10 @@ export default function RemindersPage() {
   const [debtors, setDebtors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(null); // member_id | 'bulk' | null
+  const [sendingOrder, setSendingOrder] = useState(false);
   const [settings, setSettings] = useState({ enabled: false, schedule: 'weekly', day_of_week: 'mon', time: '09:00' });
   const [savingSettings, setSavingSettings] = useState(false);
-  const [activeTab, setActiveTab] = useState('manual');
+  const [activeTab, setActiveTab] = useState('order');
 
   const fetchAll = useCallback(async () => {
     try {
@@ -55,6 +56,18 @@ export default function RemindersPage() {
       addToast(err.message, 'error');
     } finally {
       setSending(null);
+    }
+  };
+
+  const handleSendOrderReminder = async () => {
+    setSendingOrder(true);
+    try {
+      const res = await remindersAPI.sendOrderReminder();
+      addToast(res.message || `Đã nhắc ${res.sent} người`);
+    } catch (err) {
+      addToast(err.message, 'error');
+    } finally {
+      setSendingOrder(false);
     }
   };
 
@@ -115,15 +128,37 @@ export default function RemindersPage() {
 
       {/* Tabs */}
       <div className="tabs">
+        <button className={`tab ${activeTab === 'order' ? 'active' : ''}`} onClick={() => setActiveTab('order')}>
+          🍱 Nhắc Đặt Cơm
+        </button>
         <button className={`tab ${activeTab === 'manual' ? 'active' : ''}`} onClick={() => setActiveTab('manual')}>
-          ✉️ Gửi Thủ Công
+          ✉️ Nhắc Nợ
         </button>
         <button className={`tab ${activeTab === 'auto' ? 'active' : ''}`} onClick={() => setActiveTab('auto')}>
           🕐 Lịch Tự Động
         </button>
       </div>
 
-      {/* Manual tab */}
+      {/* Order reminder tab */}
+      {activeTab === 'order' && (
+        <div className="card" style={{ maxWidth: 520 }}>
+          <div className="card-title" style={{ marginBottom: '12px' }}>🍱 Nhắc Đặt Cơm Hôm Nay</div>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '20px', lineHeight: 1.6 }}>
+            Gửi email nhắc tất cả thành viên <strong>chưa đặt cơm</strong> hôm nay.
+            Chỉ gửi cho đơn hàng đang ở trạng thái <strong>mở</strong>.
+          </p>
+          <button
+            className="btn btn-primary"
+            onClick={handleSendOrderReminder}
+            disabled={sendingOrder}
+            style={{ minWidth: 200 }}
+          >
+            {sendingOrder ? '⏳ Đang gửi...' : '📧 Nhắc Đặt Cơm Ngay'}
+          </button>
+        </div>
+      )}
+
+      {/* Debt manual tab */}
       {activeTab === 'manual' && (
         <div>
           {debtors.length === 0 ? (
@@ -164,6 +199,11 @@ export default function RemindersPage() {
                           <div style={{ fontWeight: 600 }}>{d.name}</div>
                           {d.name !== d.full_name && (
                             <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{d.full_name}</div>
+                          )}
+                          {d.username && (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                              @{d.username}
+                            </div>
                           )}
                         </td>
                         <td style={{ textAlign: 'right' }}>

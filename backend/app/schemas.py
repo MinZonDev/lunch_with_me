@@ -10,12 +10,17 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class SendOtpRequest(BaseModel):
+    email: str = Field(..., max_length=255)
+
+
 class RegisterRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     password: str = Field(..., min_length=6)
     full_name: str = Field(..., min_length=1, max_length=100)
     email: str = Field(..., max_length=255)
     date_of_birth: Optional[date] = None
+    otp_code: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$")
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -31,6 +36,12 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: "UserResponse"
+
+
+class RegisterPendingResponse(BaseModel):
+    message: str
+    username: str
+    email: str
 
 
 class UserCreate(BaseModel):
@@ -68,6 +79,7 @@ class UserResponse(BaseModel):
     avatar_url: Optional[str] = None
     role: str
     is_active: bool
+    approved: bool = True
     member_id: Optional[int] = None
     created_at: datetime
 
@@ -272,6 +284,8 @@ class DepositResponse(BaseModel):
 class MemberBalanceResponse(BaseModel):
     id: int
     name: str
+    username: Optional[str] = None
+    email: Optional[str] = None
     total_deposited: int
     total_charged: int  # khoản chi ngoài
     total_spent: int
@@ -332,3 +346,31 @@ class ReviewResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ============== Delegation Schemas ==============
+
+class DelegationCreate(BaseModel):
+    delegate_member_id: int  # người được ủy quyền (sẽ đặt giùm tôi)
+
+
+class DelegationResponse(BaseModel):
+    id: int
+    grantor_member_id: int   # người ủy quyền
+    grantor_name: str
+    delegate_member_id: int  # người được ủy quyền
+    delegate_name: str
+    status: str              # active | revoked
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ============== Frontend Log Schema ==============
+
+class FrontendLogEntry(BaseModel):
+    level: str
+    message: str
+    context: Optional[dict] = None
+    timestamp: Optional[str] = None
+    url: Optional[str] = None

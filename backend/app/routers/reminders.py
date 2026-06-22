@@ -19,10 +19,12 @@ class ReminderSettings(BaseModel):
     schedule: str = "weekly"      # daily | weekly | biweekly
     day_of_week: str = "mon"      # mon tue wed thu fri sat sun (weekly/biweekly)
     time: str = "09:00"           # HH:MM VN time
+    teams_webhook_url: str = ""   # Microsoft Teams Incoming Webhook URL (group notification)
 
 
 class SendReminderRequest(BaseModel):
     member_id: Optional[int] = None   # None = gửi tất cả người nợ
+    channel: str = "email"            # email | teams
 
 
 def _compute_balances(db):
@@ -69,6 +71,7 @@ def list_debtors(db=Depends(get_db), _=Depends(get_current_admin)):
 def send_reminder(data: SendReminderRequest, db=Depends(get_db), _=Depends(get_current_admin)):
     """Gửi nhắc nợ — 1 người hoặc hàng loạt (người nợ)."""
     from app.services.email_service import send_debt_reminder
+    from app.services.teams_service import send_debt_reminder_summary
 
     balances = _compute_balances(db)
 
@@ -78,6 +81,18 @@ def send_reminder(data: SendReminderRequest, db=Depends(get_db), _=Depends(get_c
             raise HTTPException(status_code=404, detail="Không tìm thấy thành viên")
     else:
         targets = [b for b in balances if b["balance"] < 0]
+
+    if data.channel == "teams":
+        reminder_cfg = db.document(_SETTINGS_DOC).get()
+        webhook_url = reminder_cfg.to_dict().get("teams_webhook_url", "") if reminder_cfg.exists else ""
+        if not webhook_url:
+            raise HTTPException(status_code=400, detail="Chưa cấu hình Teams Webhook URL")
+        send_debt_reminder_summary(
+            [{"name": t["name"], "balance": t["balance"], "email": t["email"]} for t in targets],
+            settings.frontend_url,
+            webhook_url,
+        )
+        return {"sent": len(targets), "skipped_no_email": 0}
 
     sent, skipped = 0, 0
     for t in targets:

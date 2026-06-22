@@ -20,6 +20,9 @@ class Settings:
     smtp_user: str = os.getenv("SMTP_USER", "")
     smtp_password: str = os.getenv("SMTP_PASSWORD", "")
 
+    # Microsoft Teams group notification
+    teams_webhook_url: str = os.getenv("TEAMS_WEBHOOK_URL", "")
+
     # Bank transfer info
     bank_id: str = os.getenv("BANK_ID", "VIKKI")
     bank_account: str = os.getenv("BANK_ACCOUNT", "880011988")

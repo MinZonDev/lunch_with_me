@@ -145,6 +145,7 @@ def check_low_balance(member_id: int):
 def _job_debt_reminder():
     from app.database import init_db, get_db
     from app.services.email_service import send_debt_reminder
+    from app.services.teams_service import send_debt_reminder_summary
     from app.core.config import settings as cfg
 
     init_db()
@@ -154,6 +155,7 @@ def _job_debt_reminder():
     doc = db.document("_settings/debt_reminder").get()
     if not doc.exists or not doc.to_dict().get("enabled"):
         return
+    webhook_url = doc.to_dict().get("teams_webhook_url", "")
 
     # Compute balances for all active users
     all_txns = [s.to_dict() for s in db.collection("deposits").stream()]
@@ -165,9 +167,10 @@ def _job_debt_reminder():
     users = [s.to_dict() for s in db.collection("users").where("is_active", "==", True).stream()]
 
     sent = 0
+    debtors = []
     for u in users:
         mid = u.get("member_id")
-        if not mid or not u.get("email"):
+        if not mid:
             continue
         my_txns = [t for t in all_txns if t["member_id"] == mid]
         deposited = sum(t["amount"] for t in my_txns if t.get("type", "deposit") == "deposit" and t.get("status") == "approved")
@@ -175,8 +178,12 @@ def _job_debt_reminder():
         spent = sum(i.get("total_cost", 0) or 0 for i in all_items if i["member_id"] == mid and i["daily_order_id"] in finalized_ids)
         balance = deposited - charged - spent
         if balance < 0:
-            send_debt_reminder(u["full_name"], u["email"], balance, cfg.frontend_url)
-            sent += 1
+            debtors.append({"name": u.get("nickname") or u["full_name"], "balance": balance, "email": u.get("email", "")})
+            if u.get("email"):
+                send_debt_reminder(u["full_name"], u["email"], balance, cfg.frontend_url)
+                sent += 1
+
+    send_debt_reminder_summary(debtors, cfg.frontend_url, webhook_url)
 
     print(f"[Scheduler] Debt reminder sent to {sent} members")
 

@@ -116,7 +116,7 @@ export const restaurantsAPI = {
 // ============== Reminders ==============
 export const remindersAPI = {
   debtors: () => fetchAPI('/api/reminders/debtors'),
-  send: (member_id = null) => fetchAPI('/api/reminders/send', { method: 'POST', body: JSON.stringify({ member_id }) }),
+  send: (member_id = null, channel = 'email') => fetchAPI('/api/reminders/send', { method: 'POST', body: JSON.stringify({ member_id, channel }) }),
   sendOrderReminder: () => fetchAPI('/api/reminders/send-order-reminder', { method: 'POST' }),
   getSettings: () => fetchAPI('/api/reminders/settings'),
   saveSettings: (data) => fetchAPI('/api/reminders/settings', { method: 'PUT', body: JSON.stringify(data) }),

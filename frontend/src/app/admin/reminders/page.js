@@ -24,9 +24,9 @@ export default function RemindersPage() {
   const addToast = useToast();
   const [debtors, setDebtors] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(null); // member_id | 'bulk' | null
+  const [sending, setSending] = useState(null); // `${memberId ?? 'bulk'}:${channel}` | null
   const [sendingOrder, setSendingOrder] = useState(false);
-  const [settings, setSettings] = useState({ enabled: false, schedule: 'weekly', day_of_week: 'mon', time: '09:00' });
+  const [settings, setSettings] = useState({ enabled: false, schedule: 'weekly', day_of_week: 'mon', time: '09:00', teams_webhook_url: '' });
   const [savingSettings, setSavingSettings] = useState(false);
   const [activeTab, setActiveTab] = useState('order');
 
@@ -44,13 +44,16 @@ export default function RemindersPage() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const handleSend = async (memberId) => {
-    setSending(memberId ?? 'bulk');
+  const handleSend = async (memberId, channel = 'email') => {
+    const key = `${memberId ?? 'bulk'}:${channel}`;
+    setSending(key);
     try {
-      const res = await remindersAPI.send(memberId ?? null);
-      const msg = res.sent === 0
-        ? 'Không có ai cần nhắc (đã có email)'
-        : `Đã gửi nhắc nợ tới ${res.sent} người${res.skipped_no_email ? ` (bỏ qua ${res.skipped_no_email} người chưa có email)` : ''}`;
+      const res = await remindersAPI.send(memberId ?? null, channel);
+      const msg = channel === 'teams'
+        ? `Đã gửi thông báo Teams cho ${res.sent} người`
+        : (res.sent === 0
+          ? 'Không có ai cần nhắc (đã có email)'
+          : `Đã gửi email nhắc nợ tới ${res.sent} người${res.skipped_no_email ? ` (bỏ qua ${res.skipped_no_email} người chưa có email)` : ''}`);
       addToast(msg);
     } catch (err) {
       addToast(err.message, 'error');
@@ -169,17 +172,27 @@ export default function RemindersPage() {
             </div>
           ) : (
             <>
-              <div className="flex items-center justify-between mb-16">
+              <div className="flex items-center justify-between mb-16" style={{ flexWrap: 'wrap', gap: '8px' }}>
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', margin: 0 }}>
                   {debtors.length} người đang nợ · {debtors.filter(d => d.email).length} người có email
                 </p>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => handleSend(null)}
-                  disabled={sending !== null || debtors.filter(d => d.email).length === 0}
-                >
-                  {sending === 'bulk' ? '⏳ Đang gửi...' : `📢 Nhắc Tất Cả (${debtors.filter(d => d.email).length} người)`}
-                </button>
+                <div className="flex gap-8">
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => handleSend(null, 'email')}
+                    disabled={sending !== null || debtors.filter(d => d.email).length === 0}
+                  >
+                    {sending === 'bulk:email' ? '⏳ Đang gửi...' : `📧 Email Tất Cả (${debtors.filter(d => d.email).length})`}
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => handleSend(null, 'teams')}
+                    disabled={sending !== null || !settings.teams_webhook_url}
+                    title={!settings.teams_webhook_url ? 'Chưa cấu hình Teams Webhook URL (xem tab Lịch Tự Động)' : ''}
+                  >
+                    {sending === 'bulk:teams' ? '⏳ Đang gửi...' : `📢 Teams Tất Cả (${debtors.length})`}
+                  </button>
+                </div>
               </div>
 
               <div className="card">
@@ -189,7 +202,7 @@ export default function RemindersPage() {
                       <th>Thành viên</th>
                       <th style={{ textAlign: 'right' }}>Số nợ</th>
                       <th>Email</th>
-                      <th style={{ width: 120 }}></th>
+                      <th style={{ width: 200 }}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -215,14 +228,24 @@ export default function RemindersPage() {
                           {d.email || <span style={{ color: 'var(--text-muted)' }}>Chưa có email</span>}
                         </td>
                         <td>
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            disabled={!d.email || sending !== null}
-                            onClick={() => handleSend(d.member_id)}
-                            title={!d.email ? 'Thành viên chưa có email' : ''}
-                          >
-                            {sending === d.member_id ? '⏳' : '📧 Nhắc'}
-                          </button>
+                          <div className="flex gap-6">
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              disabled={!d.email || sending !== null}
+                              onClick={() => handleSend(d.member_id, 'email')}
+                              title={!d.email ? 'Thành viên chưa có email' : ''}
+                            >
+                              {sending === `${d.member_id}:email` ? '⏳' : '📧 Email'}
+                            </button>
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              disabled={sending !== null || !settings.teams_webhook_url}
+                              onClick={() => handleSend(d.member_id, 'teams')}
+                              title={!settings.teams_webhook_url ? 'Chưa cấu hình Teams Webhook URL' : ''}
+                            >
+                              {sending === `${d.member_id}:teams` ? '⏳' : '📢 Teams'}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -238,6 +261,21 @@ export default function RemindersPage() {
       {activeTab === 'auto' && (
         <div className="card" style={{ maxWidth: 480 }}>
           <div className="card-title" style={{ marginBottom: '20px' }}>🕐 Cài Đặt Nhắc Nợ Tự Động</div>
+
+          <div className="form-group">
+            <label className="form-label">📢 Microsoft Teams Webhook URL</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="https://xxx.webhook.office.com/..."
+              value={settings.teams_webhook_url || ''}
+              onChange={e => setSettings(s => ({ ...s, teams_webhook_url: e.target.value }))}
+            />
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: '6px', lineHeight: 1.5 }}>
+              Nếu điền, hệ thống sẽ gửi thêm 1 thông báo tổng hợp danh sách người đang nợ vào group Teams này
+              mỗi khi nhắc nợ (thủ công hoặc tự động theo lịch). Để trống nếu không muốn dùng.
+            </p>
+          </div>
 
           <div className="form-group">
             <label className="form-label">Trạng thái</label>

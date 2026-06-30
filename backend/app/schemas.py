@@ -369,6 +369,29 @@ class SpendingItemResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ============== Member Detail Schemas ==============
+
+class MemberTransactionItem(BaseModel):
+    type: str  # "deposit" | "charge" | "spending"
+    date: datetime
+    amount: int
+    description: Optional[str] = None
+    status: Optional[str] = None
+    order_date: Optional[date] = None
+    daily_order_id: Optional[int] = None
+    running_balance: int = 0
+
+
+class MemberDetailResponse(BaseModel):
+    member_id: int
+    member_name: str
+    total_deposited: int
+    total_charged: int
+    total_spent: int
+    balance: int
+    transactions: list[MemberTransactionItem]
+
+
 # ============== Frontend Log Schema ==============
 
 class FrontendLogEntry(BaseModel):

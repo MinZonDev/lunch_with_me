@@ -74,6 +74,9 @@ export default function DepositPage() {
   const [histMonth, setHistMonth] = useState(() => new Date().getMonth() + 1);
   const [histYear, setHistYear] = useState(() => new Date().getFullYear());
   const [histLoading, setHistLoading] = useState(false);
+  const [detailMember, setDetailMember] = useState(null);
+  const [detailData, setDetailData] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const addToast = useToast();
 
   const fetchData = useCallback(async () => {
@@ -141,6 +144,21 @@ export default function DepositPage() {
   useEffect(() => {
     if (activeTab === 'daily') fetchHistory(histMonth, histYear);
   }, [activeTab, histMonth, histYear, fetchHistory]);
+
+  const openMemberDetail = async (member) => {
+    setDetailMember(member);
+    setDetailData(null);
+    setDetailLoading(true);
+    try {
+      const data = await depositsAPI.memberDetail(member.id);
+      setDetailData(data);
+    } catch (err) {
+      addToast(err.message, 'error');
+      setDetailMember(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
 
   if (loading) return <div className="loading-spinner"><div className="spinner" /></div>;
 
@@ -232,6 +250,10 @@ export default function DepositPage() {
               {myBalance.total_charged > 0 && <span style={{ color: '#ff6b6b' }}>📤 Khoản chi: <strong>{formatMoney(myBalance.total_charged)}</strong></span>}
               <span>🛒 Tiền ăn: <strong>{formatMoney(myBalance.total_spent)}</strong></span>
             </div>
+            <button className="btn btn-ghost btn-sm" style={{ marginTop: '14px', color: 'var(--text-muted)', fontSize: '0.8rem' }}
+              onClick={() => openMemberDetail(myBalance)}>
+              📋 Xem lịch sử giao dịch
+            </button>
           </div>
 
           {/* Pending deposits for this user */}
@@ -268,7 +290,7 @@ export default function DepositPage() {
       {activeTab === 'summary' && admin && (
         <div className="deposit-summary-grid">
           {summary.map(member => (
-            <div key={member.id} className="member-balance-card">
+            <div key={member.id} className="member-balance-card" style={{ cursor: 'pointer' }} onClick={() => openMemberDetail(member)}>
               <div className="balance-header">
                 <div className="member-avatar" style={{
                   width: '40px', height: '40px', borderRadius: '50%',
@@ -294,6 +316,9 @@ export default function DepositPage() {
                 <span>💵 Nạp: {formatMoney(member.total_deposited)}</span>
                 {member.total_charged > 0 && <span style={{ color: '#ff6b6b' }}>📤 Chi: {formatMoney(member.total_charged)}</span>}
                 <span>🛒 Ăn: {formatMoney(member.total_spent)}</span>
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '8px', textAlign: 'right' }}>
+                Xem chi tiết →
               </div>
             </div>
           ))}
@@ -509,6 +534,98 @@ export default function DepositPage() {
                 {modalMode === 'charge' ? '📤 Thêm Khoản Chi' : admin ? '💰 Nạp Tiền' : '📤 Gửi Yêu Cầu'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Member Detail Modal */}
+      {detailMember && (
+        <div className="modal-overlay" onClick={() => setDetailMember(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '560px', width: '95vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div className="modal-title" style={{ margin: 0 }}>
+                💳 {detailMember.name}
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => setDetailMember(null)}>✕</button>
+            </div>
+
+            {detailLoading ? (
+              <div className="loading-spinner" style={{ flex: 1 }}><div className="spinner" /></div>
+            ) : detailData && (
+              <>
+                {/* Balance summary */}
+                <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: '100px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-md)', padding: '12px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Đã nạp</div>
+                    <div style={{ fontWeight: 700, color: '#06d6a0' }}>+{formatMoney(detailData.total_deposited)}</div>
+                  </div>
+                  {detailData.total_charged > 0 && (
+                    <div style={{ flex: 1, minWidth: '100px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-md)', padding: '12px', textAlign: 'center' }}>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Khoản chi</div>
+                      <div style={{ fontWeight: 700, color: '#ff6b6b' }}>−{formatMoney(detailData.total_charged)}</div>
+                    </div>
+                  )}
+                  <div style={{ flex: 1, minWidth: '100px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-md)', padding: '12px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Tiền ăn</div>
+                    <div style={{ fontWeight: 700, color: '#ff8c42' }}>−{formatMoney(detailData.total_spent)}</div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: '100px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-md)', padding: '12px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Số dư</div>
+                    <div><BalanceDisplay balance={detailData.balance} /></div>
+                  </div>
+                </div>
+
+                {/* Transaction timeline */}
+                <div style={{ flex: 1, overflowY: 'auto', borderTop: '1px solid var(--border-subtle)', paddingTop: '12px' }}>
+                  {detailData.transactions.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>Chưa có giao dịch</div>
+                  ) : detailData.transactions.map((txn, idx) => {
+                    const isDeposit = txn.type === 'deposit';
+                    const isCharge = txn.type === 'charge';
+                    const isSpending = txn.type === 'spending';
+                    const isPending = txn.status === 'pending';
+                    return (
+                      <div key={idx} style={{
+                        display: 'flex', gap: '12px', padding: '10px 4px',
+                        borderBottom: '1px solid var(--border-subtle)',
+                        opacity: isPending ? 0.6 : 1,
+                      }}>
+                        <div style={{
+                          width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '0.9rem',
+                          background: isDeposit ? 'rgba(6,214,160,0.12)' : isCharge ? 'rgba(255,107,107,0.12)' : 'rgba(255,140,66,0.12)',
+                        }}>
+                          {isDeposit ? '💵' : isCharge ? '📤' : '🍽️'}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 500 }}>
+                            {isDeposit ? (isPending ? '⏳ Yêu cầu nạp tiền' : 'Nạp tiền') : isCharge ? 'Khoản chi' : 'Tiền ăn'}
+                            {txn.description && <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: '6px' }}>· {txn.description}</span>}
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                            {txn.order_date
+                              ? new Date(txn.order_date).toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })
+                              : new Date(txn.date).toLocaleString('vi-VN')}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                          <div style={{
+                            fontWeight: 700, fontSize: '0.9rem',
+                            color: isDeposit ? '#06d6a0' : '#ff6b6b',
+                          }}>
+                            {isDeposit ? '+' : '−'}{formatMoney(txn.amount)}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                            Dư: <BalanceDisplay balance={txn.running_balance} />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

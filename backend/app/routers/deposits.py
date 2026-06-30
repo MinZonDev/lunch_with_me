@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import calendar
 
 from app.database import get_db, _next_id, _to_ns
-from app.schemas import DepositCreate, ChargeCreate, DepositResponse, MemberBalanceResponse, DepositHistoryResponse, MemberDailyCost, SpendingItemResponse
+from app.schemas import DepositCreate, ChargeCreate, DepositResponse, MemberBalanceResponse, DepositHistoryResponse, MemberDailyCost, SpendingItemResponse, MemberDetailResponse, MemberTransactionItem
 from app.core.auth import get_current_user, get_current_admin
 
 router = APIRouter(prefix="/api/deposits", tags=["deposits"])
@@ -237,6 +237,104 @@ def get_spending(db=Depends(get_db), current_user=Depends(get_current_user)):
 
     result.sort(key=lambda r: r.order_date, reverse=True)
     return result
+
+
+@router.get("/member/{member_id}", response_model=MemberDetailResponse)
+def get_member_detail(member_id: int, db=Depends(get_db), current_user=Depends(get_current_user)):
+    """Chi tiết giao dịch của một thành viên: nạp tiền, khoản chi, tiền ăn."""
+    from datetime import date as date_type
+    is_admin = getattr(current_user, "role", "user") == "admin"
+    my_member_id = getattr(current_user, "member_id", None)
+
+    # Non-admin can only view their own
+    if not is_admin and my_member_id != member_id:
+        raise HTTPException(status_code=403, detail="Không có quyền xem thông tin này")
+
+    m_doc = db.collection("members").document(str(member_id)).get()
+    if not m_doc.exists:
+        raise HTTPException(status_code=404, detail="Member not found")
+    member_name = m_doc.to_dict().get("name", "?")
+
+    # All deposit/charge transactions for this member
+    dep_docs = [s.to_dict() for s in db.collection("deposits").where("member_id", "==", member_id).stream()]
+    dep_docs.sort(key=lambda d: d["created_at"])
+
+    # All spending (finalized order items)
+    finalized_map = {
+        s.to_dict()["id"]: s.to_dict()
+        for s in db.collection("daily_orders").where("status", "==", "finalized").stream()
+    }
+    spending_items = [
+        s.to_dict() for s in
+        db.collection("order_items")
+        .where("member_id", "==", member_id)
+        .where("is_eating", "==", True)
+        .stream()
+    ]
+
+    total_deposited = sum(d["amount"] for d in dep_docs if d.get("type", "deposit") == "deposit" and d.get("status") == "approved")
+    total_charged = sum(d["amount"] for d in dep_docs if d.get("type") == "charge")
+    total_spent = sum(
+        i.get("total_cost", 0) or 0 for i in spending_items
+        if i["daily_order_id"] in finalized_map
+    )
+    balance = total_deposited - total_charged - total_spent
+
+    # Build unified transaction list
+    txns: list[MemberTransactionItem] = []
+
+    for d in dep_docs:
+        txn_type = d.get("type", "deposit")
+        txns.append(MemberTransactionItem(
+            type=txn_type,
+            date=d["created_at"],
+            amount=d["amount"],
+            description=d.get("note"),
+            status=d.get("status", "approved"),
+        ))
+
+    for item in spending_items:
+        order = finalized_map.get(item["daily_order_id"])
+        if not order:
+            continue
+        dish = item.get("dish_name") or item.get("dish_name_chay") or "—"
+        order_date_raw = order["order_date"]
+        order_date = date_type.fromisoformat(str(order_date_raw))
+        order_name = order.get("name")
+        desc = dish
+        if order_name:
+            desc = f"{dish} ({order_name})"
+        txns.append(MemberTransactionItem(
+            type="spending",
+            date=item.get("created_at") or order.get("created_at"),
+            amount=item.get("total_cost", 0) or 0,
+            description=desc,
+            order_date=order_date,
+            daily_order_id=item["daily_order_id"],
+        ))
+
+    # Sort by date descending, compute running balance from oldest to newest
+    txns.sort(key=lambda t: t.date)
+    running = 0
+    for t in txns:
+        if t.type == "deposit" and t.status == "approved":
+            running += t.amount
+        elif t.type == "charge":
+            running -= t.amount
+        elif t.type == "spending":
+            running -= t.amount
+        t.running_balance = running
+    txns.reverse()
+
+    return MemberDetailResponse(
+        member_id=member_id,
+        member_name=member_name,
+        total_deposited=total_deposited,
+        total_charged=total_charged,
+        total_spent=total_spent,
+        balance=balance,
+        transactions=txns,
+    )
 
 
 @router.get("/history", response_model=DepositHistoryResponse)

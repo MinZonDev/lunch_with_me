@@ -98,6 +98,7 @@ export const depositsAPI = {
   summary: () => fetchAPI('/api/deposits/summary'),
   list: () => fetchAPI('/api/deposits'),
   spending: () => fetchAPI('/api/deposits/spending'),
+  memberDetail: (memberId) => fetchAPI(`/api/deposits/member/${memberId}`),
   create: (data) => fetchAPI('/api/deposits', { method: 'POST', body: JSON.stringify(data) }),
   approve: (id) => fetchAPI(`/api/deposits/${id}/approve`, { method: 'POST' }),
   charge: (data) => fetchAPI('/api/deposits/charge', { method: 'POST', body: JSON.stringify(data) }),

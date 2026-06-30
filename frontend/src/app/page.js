@@ -30,7 +30,6 @@ export default function HomePage() {
   const [selectedMember, setSelectedMember] = useState(null);
   const [dishName, setDishName] = useState('');
   const [dishNote, setDishNote] = useState('');
-  const [isChay, setIsChay] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [restaurants, setRestaurants] = useState([]);
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
@@ -120,10 +119,8 @@ export default function HomePage() {
     try {
       await orderItemsAPI.create(todayOrder.id, {
         member_id: selectedMember,
-        dish_name: isChay ? null : dishName.trim(),
-        dish_name_chay: isChay ? dishName.trim() : null,
+        dish_name: dishName.trim(),
         note: dishNote.trim() || null,
-        is_chay: isChay,
       });
       setDishName(''); setDishNote(''); setSelectedMember(null);
       const isProxy = selectedMember !== currentUser?.member_id;
@@ -290,11 +287,7 @@ export default function HomePage() {
           <div className="stats-grid">
             <div className="stat-card">
               <div className="stat-icon orange">🍽️</div>
-              <div className="stat-info"><h3>{todayOrder.eater_count + todayOrder.chay_eater_count}</h3><p>Người ăn</p></div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-icon green">🥗</div>
-              <div className="stat-info"><h3>{todayOrder.chay_eater_count}</h3><p>Ăn chay</p></div>
+              <div className="stat-info"><h3>{todayOrder.eater_count}</h3><p>Người ăn</p></div>
             </div>
             {isFinalized && (
               <>
@@ -373,13 +366,6 @@ export default function HomePage() {
                   )}
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Loại</label>
-                  <div className="flex gap-8">
-                    <button className={`btn btn-sm ${!isChay ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setIsChay(false)}>🍖 Thường</button>
-                    <button className={`btn btn-sm ${isChay ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setIsChay(true)}>🥬 Chay</button>
-                  </div>
-                </div>
-                <div className="form-group">
                   <label className="form-label">Tên Món</label>
                   <input type="text" className="form-input" placeholder="VD: Gà phi lê, Cá ngừ kho tiêu..." value={dishName} onChange={e => setDishName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSubmitDish()} />
                 </div>
@@ -407,7 +393,7 @@ export default function HomePage() {
                           </span>
                         )}
                       </div>
-                      <div className="dish-name">{item.is_chay ? '🥬 ' : '🍖 '}{item.dish_name || item.dish_name_chay}</div>
+                      <div className="dish-name">🍖 {item.dish_name}</div>
                       {item.note && <div className="dish-name" style={{ fontStyle: 'italic' }}>📝 {item.note}</div>}
                       {item.extra_item_description && <div className="extra-info">+ {item.extra_item_description} ({formatMoney(item.extra_item_cost)})</div>}
                     </div>

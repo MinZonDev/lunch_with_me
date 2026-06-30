@@ -40,7 +40,7 @@ export default function HistoryPage() {
 
   const totalSpent = orders
     .filter((o) => o.status === 'finalized')
-    .reduce((sum, o) => sum + (o.total_bill || 0) + (o.total_bill_chay || 0), 0);
+    .reduce((sum, o) => sum + (o.total_bill || 0), 0);
 
   const finalizedCount = orders.filter((o) => o.status === 'finalized').length;
 
@@ -105,8 +105,8 @@ export default function HistoryPage() {
                   const d = new Date(order.order_date);
                   const day = d.getDate();
                   const month = MONTHS_VI[d.getMonth() + 1];
-                  const totalPeople = (order.eater_count || 0) + (order.chay_eater_count || 0);
-                  const totalBill = (order.total_bill || 0) + (order.total_bill_chay || 0);
+                  const totalPeople = order.eater_count || 0;
+                  const totalBill = order.total_bill || 0;
 
                   return (
                     <Link href={`/order/${order.id}`} key={order.id} className="history-card">
@@ -117,7 +117,6 @@ export default function HistoryPage() {
                       <div className="history-info">
                         <h4>
                           {totalPeople} người ăn
-                          {order.chay_eater_count > 0 && ` (${order.chay_eater_count} chay)`}
                         </h4>
                         <p>
                           <span className={`badge badge-${order.status}`} style={{ fontSize: '0.65rem' }}>

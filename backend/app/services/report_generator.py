@@ -54,7 +54,7 @@ def generate_report(db, start: date, end: date, period_label: str) -> dict:
     grand_total = 0
     for o in orders:
         eaters = sum(1 for i in order_id_to_items.get(o["id"], []) if i.get("is_eating"))
-        bill = (o.get("total_bill") or 0) + (o.get("total_bill_chay") or 0)
+        bill = o.get("total_bill") or 0
         grand_total += bill
         days.append({
             "order_date": date.fromisoformat(o["order_date"]),

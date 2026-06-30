@@ -56,26 +56,22 @@ def _build_order_response(order, items) -> DailyOrderResponse:
 
     item_responses = []
     eater_count = 0
-    chay_eater_count = 0
     for item in items:
+        # Backward compat: old items may have dish_name_chay instead of dish_name
+        dish = getattr(item, "dish_name", None) or getattr(item, "dish_name_chay", None)
         item_responses.append(OrderItemInOrder(
             id=item.id,
             member_id=item.member_id,
             member_name=item.member_name,
-            dish_name=getattr(item, "dish_name", None),
-            dish_name_chay=getattr(item, "dish_name_chay", None),
+            dish_name=dish,
             note=getattr(item, "note", None),
             is_eating=item.is_eating,
-            is_chay=item.is_chay,
             extra_item_description=getattr(item, "extra_item_description", None),
             extra_item_cost=getattr(item, "extra_item_cost", 0) or 0,
             total_cost=getattr(item, "total_cost", 0) or 0,
         ))
         if item.is_eating:
-            if item.is_chay:
-                chay_eater_count += 1
-            else:
-                eater_count += 1
+            eater_count += 1
 
     raw_links = getattr(order, "links", None) or []
     parsed_links = [OrderLinkItem(label=l["label"], url=l["url"]) for l in raw_links if isinstance(l, dict)]
@@ -91,15 +87,12 @@ def _build_order_response(order, items) -> DailyOrderResponse:
         order_deadline=getattr(order, "order_deadline", None),
         minutes_remaining=_minutes_remaining(getattr(order, "order_deadline", None)),
         total_bill=getattr(order, "total_bill", 0) or 0,
-        total_bill_chay=getattr(order, "total_bill_chay", 0) or 0,
         shared_cost_per_person=getattr(order, "shared_cost_per_person", 0) or 0,
-        shared_cost_per_person_chay=getattr(order, "shared_cost_per_person_chay", 0) or 0,
         note=getattr(order, "note", None),
         created_by=getattr(order, "created_by", None),
         created_at=order.created_at,
         items=item_responses,
         eater_count=eater_count,
-        chay_eater_count=chay_eater_count,
     )
 
 
@@ -136,17 +129,14 @@ def list_orders(
     for order in orders:
         order_date = order.order_date if isinstance(order.order_date, date) else date.fromisoformat(str(order.order_date))
         items_snap = list(db.collection("order_items").where("daily_order_id", "==", order.id).stream())
-        eater_count = sum(1 for s in items_snap if not s.to_dict().get("is_chay") and s.to_dict().get("is_eating"))
-        chay_eater_count = sum(1 for s in items_snap if s.to_dict().get("is_chay") and s.to_dict().get("is_eating"))
+        eater_count = sum(1 for s in items_snap if s.to_dict().get("is_eating"))
         result.append(DailyOrderListResponse(
             id=order.id,
             order_date=order_date,
             name=getattr(order, "name", None),
             status=order.status,
             total_bill=getattr(order, "total_bill", 0) or 0,
-            total_bill_chay=getattr(order, "total_bill_chay", 0) or 0,
             eater_count=eater_count,
-            chay_eater_count=chay_eater_count,
             note=getattr(order, "note", None),
             created_at=order.created_at,
         ))
@@ -204,9 +194,7 @@ def create_order(data: DailyOrderCreate, db=Depends(get_db), _=Depends(get_curre
         "links": initial_links,
         "order_deadline": _make_deadline(data.order_date, data.deadline_time),
         "total_bill": 0,
-        "total_bill_chay": 0,
         "shared_cost_per_person": 0,
-        "shared_cost_per_person_chay": 0,
         "note": data.note,
         "created_by": data.created_by,
         "created_at": now,
@@ -226,10 +214,8 @@ def create_order(data: DailyOrderCreate, db=Depends(get_db), _=Depends(get_curre
             "order_date": order_date_str,
             "member_id": m["id"],
             "dish_name": None,
-            "dish_name_chay": None,
             "note": None,
             "is_eating": False,
-            "is_chay": False,
             "extra_item_description": None,
             "extra_item_cost": 0,
             "total_cost": 0,
@@ -251,8 +237,6 @@ def update_order(order_id: int, data: DailyOrderUpdate, db=Depends(get_db), _=De
     updates = {}
     if data.total_bill is not None:
         updates["total_bill"] = data.total_bill
-    if data.total_bill_chay is not None:
-        updates["total_bill_chay"] = data.total_bill_chay
     if data.note is not None:
         updates["note"] = data.note
     if data.status is not None:
@@ -295,7 +279,6 @@ def finalize_order(order_id: int, data: DailyOrderFinalize, db=Depends(get_db), 
         raise HTTPException(status_code=404, detail="Order not found")
 
     order.total_bill = data.total_bill
-    order.total_bill_chay = data.total_bill_chay
 
     items = _load_items_with_names(db, order_id)
     cost_result = calculate_costs(order, items)
@@ -303,10 +286,8 @@ def finalize_order(order_id: int, data: DailyOrderFinalize, db=Depends(get_db), 
     # Update order
     ref.update({
         "total_bill": data.total_bill,
-        "total_bill_chay": data.total_bill_chay,
         "status": "finalized",
         "shared_cost_per_person": cost_result["shared_cost_per_person"],
-        "shared_cost_per_person_chay": cost_result["shared_cost_per_person_chay"],
     })
 
     # Update item costs in batch

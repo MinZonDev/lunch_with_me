@@ -60,7 +60,7 @@ export default function AdminPage() {
   const totalSpent = summary.reduce((s, m) => s + m.total_spent, 0);
 
   // Today summary
-  const todayEaters = todayOrders.reduce((s, o) => s + (o.eater_count || 0) + (o.chay_eater_count || 0), 0);
+  const todayEaters = todayOrders.reduce((s, o) => s + (o.eater_count || 0), 0);
   const todayStatus = todayOrders.length === 0 ? null
     : todayOrders.every(o => o.status === 'finalized') ? 'finalized'
     : todayOrders.some(o => o.status === 'open') ? 'open'
@@ -154,7 +154,7 @@ export default function AdminPage() {
                 </span>
                 <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{o.name || 'Menu'}</span>
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginLeft: 'auto' }}>
-                  {(o.eater_count || 0) + (o.chay_eater_count || 0)} người
+                  {o.eater_count || 0} người
                 </span>
               </div>
             </Link>
@@ -210,7 +210,7 @@ export default function AdminPage() {
                     <span className={`badge badge-${o.status}`} style={{ fontSize: '0.68rem', padding: '2px 6px' }}>
                       {o.status === 'open' ? '🟢 Mở' : o.status === 'locked' ? '🟡 Khóa' : '🔴 Chốt'}
                     </span>
-                    <span style={{ marginLeft: 'auto', color: 'var(--text-muted)' }}>{(o.eater_count || 0) + (o.chay_eater_count || 0)}👤</span>
+                    <span style={{ marginLeft: 'auto', color: 'var(--text-muted)' }}>{o.eater_count || 0}👤</span>
                     {o.status === 'finalized' && o.total_bill > 0 && (
                       <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>{formatMoney(o.total_bill)}</span>
                     )}

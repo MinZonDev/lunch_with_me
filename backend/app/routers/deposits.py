@@ -231,7 +231,6 @@ def get_spending(db=Depends(get_db), current_user=Depends(get_current_user)):
             order_date=order_date,
             order_name=order.get("name"),
             dish_name=dish,
-            is_chay=item.get("is_chay", False),
             total_cost=item.get("total_cost", 0) or 0,
             created_at=item.get("created_at") or order.get("created_at"),
         ))

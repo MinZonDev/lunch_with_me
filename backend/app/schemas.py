@@ -150,7 +150,6 @@ class DailyOrderCreate(BaseModel):
 
 class DailyOrderUpdate(BaseModel):
     total_bill: Optional[int] = None
-    total_bill_chay: Optional[int] = None
     note: Optional[str] = None
     status: Optional[str] = None
 
@@ -161,7 +160,6 @@ class DailyOrderLinksUpdate(BaseModel):
 
 class DailyOrderFinalize(BaseModel):
     total_bill: int = Field(..., ge=0)
-    total_bill_chay: int = Field(default=0, ge=0)
 
 
 class OrderItemInOrder(BaseModel):
@@ -169,10 +167,8 @@ class OrderItemInOrder(BaseModel):
     member_id: int
     member_name: str
     dish_name: Optional[str] = None
-    dish_name_chay: Optional[str] = None
     note: Optional[str] = None
     is_eating: bool
-    is_chay: bool
     extra_item_description: Optional[str] = None
     extra_item_cost: int
     total_cost: int
@@ -191,15 +187,12 @@ class DailyOrderResponse(BaseModel):
     order_deadline: Optional[datetime] = None
     minutes_remaining: Optional[int] = None  # computed, not stored
     total_bill: int
-    total_bill_chay: int
     shared_cost_per_person: int
-    shared_cost_per_person_chay: int
     note: Optional[str] = None
     created_by: Optional[int] = None
     created_at: datetime
     items: list[OrderItemInOrder] = []
     eater_count: int = 0
-    chay_eater_count: int = 0
 
     model_config = {"from_attributes": True}
 
@@ -210,9 +203,7 @@ class DailyOrderListResponse(BaseModel):
     name: Optional[str] = None
     status: str
     total_bill: int
-    total_bill_chay: int
     eater_count: int = 0
-    chay_eater_count: int = 0
     note: Optional[str] = None
     created_at: datetime
 
@@ -224,16 +215,12 @@ class DailyOrderListResponse(BaseModel):
 class OrderItemCreate(BaseModel):
     member_id: int
     dish_name: Optional[str] = None
-    dish_name_chay: Optional[str] = None
     note: Optional[str] = None
-    is_chay: bool = False
 
 
 class OrderItemUpdate(BaseModel):
     dish_name: Optional[str] = None
-    dish_name_chay: Optional[str] = None
     note: Optional[str] = None
-    is_chay: Optional[bool] = None
 
 
 class OrderItemExtraUpdate(BaseModel):
@@ -247,10 +234,8 @@ class OrderItemResponse(BaseModel):
     member_id: int
     member_name: str
     dish_name: Optional[str] = None
-    dish_name_chay: Optional[str] = None
     note: Optional[str] = None
     is_eating: bool
-    is_chay: bool
     extra_item_description: Optional[str] = None
     extra_item_cost: int
     total_cost: int
@@ -378,7 +363,6 @@ class SpendingItemResponse(BaseModel):
     order_date: date
     order_name: Optional[str] = None
     dish_name: Optional[str] = None
-    is_chay: bool = False
     total_cost: int
     created_at: datetime
 

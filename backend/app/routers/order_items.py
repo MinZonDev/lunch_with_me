@@ -24,16 +24,16 @@ def _get_order_ns(db, order_id: int):
 
 
 def _item_response(item, member_name: str) -> OrderItemResponse:
+    # Backward compat: old items may have dish_name_chay instead of dish_name
+    dish = getattr(item, "dish_name", None) or getattr(item, "dish_name_chay", None)
     return OrderItemResponse(
         id=item.id,
         daily_order_id=item.daily_order_id,
         member_id=item.member_id,
         member_name=member_name,
-        dish_name=getattr(item, "dish_name", None),
-        dish_name_chay=getattr(item, "dish_name_chay", None),
+        dish_name=dish,
         note=getattr(item, "note", None),
         is_eating=item.is_eating,
-        is_chay=item.is_chay,
         extra_item_description=getattr(item, "extra_item_description", None),
         extra_item_cost=getattr(item, "extra_item_cost", 0) or 0,
         total_cost=getattr(item, "total_cost", 0) or 0,
@@ -102,7 +102,7 @@ def create_item(
         raise HTTPException(status_code=404, detail="Member not found")
     member_name = m_doc.to_dict().get("name", "?")
 
-    is_eating = bool(data.dish_name or data.dish_name_chay)
+    is_eating = bool(data.dish_name)
 
     existing_snap = list(
         db.collection("order_items")
@@ -115,9 +115,7 @@ def create_item(
         ref = existing_snap[0].reference
         updates = {
             "dish_name": data.dish_name,
-            "dish_name_chay": data.dish_name_chay,
             "note": data.note,
-            "is_chay": data.is_chay,
             "is_eating": is_eating,
         }
         ref.update(updates)
@@ -132,10 +130,8 @@ def create_item(
         "order_date": str(order.order_date),
         "member_id": data.member_id,
         "dish_name": data.dish_name,
-        "dish_name_chay": data.dish_name_chay,
         "note": data.note,
         "is_eating": is_eating,
-        "is_chay": data.is_chay,
         "extra_item_description": None,
         "extra_item_cost": 0,
         "total_cost": 0,
@@ -172,15 +168,9 @@ def update_item(
     if data.dish_name is not None:
         updates["dish_name"] = data.dish_name
         d["dish_name"] = data.dish_name
-    if data.dish_name_chay is not None:
-        updates["dish_name_chay"] = data.dish_name_chay
-        d["dish_name_chay"] = data.dish_name_chay
     if data.note is not None:
         updates["note"] = data.note
         d["note"] = data.note
-    if data.is_chay is not None:
-        updates["is_chay"] = data.is_chay
-        d["is_chay"] = data.is_chay
 
     updates["is_eating"] = bool(d.get("dish_name") or d.get("dish_name_chay"))
     d["is_eating"] = updates["is_eating"]
@@ -237,10 +227,8 @@ def cancel_item(
 
     ref.update({
         "dish_name": None,
-        "dish_name_chay": None,
         "note": None,
         "is_eating": False,
-        "is_chay": False,
         "extra_item_description": None,
         "extra_item_cost": 0,
     })

@@ -8,7 +8,7 @@ import openpyxl
 
 COL_MEMBER_NAME = 2
 COL_DISH = 3
-COL_DISH_CHAY = 4
+COL_DISH_ALT = 4  # formerly "chay" column, used as fallback
 COL_NOTE = 6
 COL_EXTRA = 9
 
@@ -87,13 +87,13 @@ def preview_import(file: IO[bytes], member_name_map: dict[str, int] | None = Non
                 continue
 
             dish = str(row[COL_DISH - 1]).strip() if len(row) >= COL_DISH and row[COL_DISH - 1] else ""
-            dish_chay = str(row[COL_DISH_CHAY - 1]).strip() if len(row) >= COL_DISH_CHAY and row[COL_DISH_CHAY - 1] else ""
+            dish_alt = str(row[COL_DISH_ALT - 1]).strip() if len(row) >= COL_DISH_ALT and row[COL_DISH_ALT - 1] else ""
             note = str(row[COL_NOTE - 1]).strip() if len(row) >= COL_NOTE and row[COL_NOTE - 1] else ""
             extra_val = row[COL_EXTRA - 1] if len(row) >= COL_EXTRA else None
             extra_desc, extra_cost = _parse_extra(extra_val)
 
-            is_eating = bool(dish or dish_chay)
-            is_chay = bool(dish_chay) and not bool(dish)
+            dish_name = dish or dish_alt
+            is_eating = bool(dish_name)
 
             member_id = (member_name_map or {}).get(name)
             if is_eating and not member_id:
@@ -102,8 +102,7 @@ def preview_import(file: IO[bytes], member_name_map: dict[str, int] | None = Non
             members_in_day.append({
                 "excel_name": name,
                 "member_id": member_id,
-                "dish": dish or dish_chay,
-                "is_chay": is_chay,
+                "dish": dish_name,
                 "note": note or None,
                 "extra_desc": extra_desc,
                 "extra_cost": extra_cost,
@@ -146,11 +145,7 @@ def commit_import(file: IO[bytes], member_name_map: dict[str, int], db) -> dict:
                 "order_date": order_date,
                 "status": "finalized",
                 "total_bill": day["total_bill"],
-                "total_bill_chay": 0,
                 "shared_cost_per_person": 0,
-                "shared_cost_per_person_chay": 0,
-                "menu_link": None,
-                "menu_link_chay": None,
                 "order_deadline": None,
                 "note": None,
                 "created_by": None,
@@ -169,11 +164,9 @@ def commit_import(file: IO[bytes], member_name_map: dict[str, int], db) -> dict:
                     "daily_order_id": order_id,
                     "order_date": order_date,
                     "member_id": mid,
-                    "dish_name": m["dish"] if not m["is_chay"] else None,
-                    "dish_name_chay": m["dish"] if m["is_chay"] else None,
+                    "dish_name": m["dish"],
                     "note": m["note"],
                     "is_eating": m["is_eating"],
-                    "is_chay": m["is_chay"],
                     "extra_item_description": m["extra_desc"],
                     "extra_item_cost": m["extra_cost"],
                     "total_cost": 0,

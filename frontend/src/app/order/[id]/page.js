@@ -13,7 +13,6 @@ export default function OrderDetailPage({ params }) {
   const [memberUsernameMap, setMemberUsernameMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [totalBill, setTotalBill] = useState('');
-  const [totalBillChay, setTotalBillChay] = useState('');
   const [editingExtra, setEditingExtra] = useState(null);
   const [extraDesc, setExtraDesc] = useState('');
   const [extraCost, setExtraCost] = useState('');
@@ -30,7 +29,6 @@ export default function OrderDetailPage({ params }) {
       ]);
       setOrder(data);
       if (data.total_bill) setTotalBill(data.total_bill.toString());
-      if (data.total_bill_chay) setTotalBillChay(data.total_bill_chay.toString());
       setMemberUsernameMap(
         Object.fromEntries(membersList.filter(m => m.username).map(m => [m.id, m.username]))
       );
@@ -67,16 +65,12 @@ export default function OrderDetailPage({ params }) {
 
   const handleFinalize = async () => {
     const bill = parseInt(totalBill) || 0;
-    const billChay = parseInt(totalBillChay) || 0;
-    if (bill === 0 && billChay === 0) {
+    if (bill === 0) {
       addToast('Nhập tổng tiền bill!', 'error');
       return;
     }
     try {
-      await ordersAPI.finalize(orderId, {
-        total_bill: bill,
-        total_bill_chay: billChay,
-      });
+      await ordersAPI.finalize(orderId, { total_bill: bill });
       addToast('Đã chốt order! 🎉');
       fetchOrder();
     } catch (err) {
@@ -131,8 +125,7 @@ export default function OrderDetailPage({ params }) {
     );
   }
 
-  const eatingItems = order.items.filter((i) => i.is_eating && !i.is_chay);
-  const chayItems = order.items.filter((i) => i.is_eating && i.is_chay);
+  const eatingItems = order.items.filter((i) => i.is_eating);
   const notEatingItems = order.items.filter((i) => !i.is_eating);
   const isFinalized = order.status === 'finalized';
 
@@ -166,14 +159,7 @@ export default function OrderDetailPage({ params }) {
           <div className="stat-icon orange">🍽️</div>
           <div className="stat-info">
             <h3>{eatingItems.length}</h3>
-            <p>Ăn thường</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon green">🥗</div>
-          <div className="stat-info">
-            <h3>{chayItems.length}</h3>
-            <p>Ăn chay</p>
+            <p>Người ăn</p>
           </div>
         </div>
         {isFinalized && (
@@ -181,7 +167,7 @@ export default function OrderDetailPage({ params }) {
             <div className="stat-card">
               <div className="stat-icon blue">💰</div>
               <div className="stat-info">
-                <h3>{formatMoney(order.total_bill + order.total_bill_chay)}</h3>
+                <h3>{formatMoney(order.total_bill)}</h3>
                 <p>Tổng bill</p>
               </div>
             </div>
@@ -189,7 +175,7 @@ export default function OrderDetailPage({ params }) {
               <div className="stat-icon yellow">👤</div>
               <div className="stat-info">
                 <h3>{formatMoney(order.shared_cost_per_person)}</h3>
-                <p>Mỗi người (thường)</p>
+                <p>Mỗi người</p>
               </div>
             </div>
           </>
@@ -211,7 +197,7 @@ export default function OrderDetailPage({ params }) {
               <div key={idx} className="flex gap-8 mb-8" style={{ flexWrap: 'wrap' }}>
                 <input
                   className="form-input"
-                  placeholder="Tên (VD: Quán chay, Quán thường)"
+                  placeholder="Tên link"
                   value={link.label}
                   onChange={e => { const d = [...linksDraft]; d[idx].label = e.target.value; setLinksDraft(d); }}
                   style={{ flex: '1', minWidth: '140px' }}
@@ -251,10 +237,10 @@ export default function OrderDetailPage({ params }) {
         )}
       </div>
 
-      {/* Regular eaters */}
+      {/* Eaters */}
       {eatingItems.length > 0 && (
         <div className="mb-24">
-          <div className="card-title mb-16">🍖 Món Thường ({eatingItems.length})</div>
+          <div className="card-title mb-16">🍽️ Đã chọn món ({eatingItems.length})</div>
           <div className="order-items-list">
             {eatingItems.map((item) => (
               <div key={item.id} className="order-item eating">
@@ -273,7 +259,7 @@ export default function OrderDetailPage({ params }) {
                   {item.extra_item_description && (
                     <div className="extra-info">+ {item.extra_item_description} ({formatMoney(item.extra_item_cost)})</div>
                   )}
-                  {editingExtra === item.id && (
+                  {admin && !isFinalized && editingExtra === item.id && (
                     <div className="flex gap-8 mt-8" style={{ flexWrap: 'wrap' }}>
                       <input
                         type="text"
@@ -298,7 +284,7 @@ export default function OrderDetailPage({ params }) {
                 </div>
                 <div className="flex gap-8 items-center">
                   {isFinalized && <div className="item-cost">{formatMoney(item.total_cost)}</div>}
-                  {!isFinalized && (
+                  {admin && !isFinalized && (
                     <button
                       className="btn btn-ghost btn-sm"
                       onClick={() => {
@@ -312,35 +298,6 @@ export default function OrderDetailPage({ params }) {
                     </button>
                   )}
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Chay eaters */}
-      {chayItems.length > 0 && (
-        <div className="mb-24">
-          <div className="card-title mb-16">🥬 Món Chay ({chayItems.length})</div>
-          <div className="order-items-list">
-            {chayItems.map((item) => (
-              <div key={item.id} className="order-item eating" style={{ borderLeftColor: 'var(--status-success)' }}>
-                <div className="member-avatar" style={{ background: 'linear-gradient(135deg, #06d6a0, #4ecdc4)' }}>
-                  {getInitials(item.member_name)}
-                </div>
-                <div className="item-info">
-                  <div className="member-name">
-                    {item.member_name}
-                    {admin && memberUsernameMap[item.member_id] && (
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace', marginLeft: '6px' }}>
-                        @{memberUsernameMap[item.member_id]}
-                      </span>
-                    )}
-                  </div>
-                  <div className="dish-name">🥬 {item.dish_name_chay}</div>
-                  {item.note && <div className="dish-name" style={{ fontStyle: 'italic' }}>📝 {item.note}</div>}
-                </div>
-                {isFinalized && <div className="item-cost">{formatMoney(item.total_cost)}</div>}
               </div>
             ))}
           </div>
@@ -364,33 +321,21 @@ export default function OrderDetailPage({ params }) {
       )}
 
       {/* Finalize Section */}
-      {!isFinalized && (eatingItems.length > 0 || chayItems.length > 0) && (
+      {admin && !isFinalized && eatingItems.length > 0 && (
         <div className="finalize-section">
           <h3>💰 Chốt Bill</h3>
           <p className="text-muted mb-16" style={{ fontSize: '0.85rem' }}>
             Nhập tổng tiền từ app Be sau khi đã đặt xong. Hệ thống sẽ tự động chia tiền.
           </p>
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Tổng bill thường (k)</label>
-              <input
-                type="number"
-                className="form-input"
-                placeholder="VD: 252"
-                value={totalBill}
-                onChange={(e) => setTotalBill(e.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Tổng bill chay (k)</label>
-              <input
-                type="number"
-                className="form-input"
-                placeholder="VD: 50"
-                value={totalBillChay}
-                onChange={(e) => setTotalBillChay(e.target.value)}
-              />
-            </div>
+          <div className="form-group">
+            <label className="form-label">Tổng bill (k)</label>
+            <input
+              type="number"
+              className="form-input"
+              placeholder="VD: 252"
+              value={totalBill}
+              onChange={(e) => setTotalBill(e.target.value)}
+            />
           </div>
           <button className="btn btn-primary btn-lg w-full" onClick={handleFinalize}>
             🎉 Chốt Order & Chia Tiền
@@ -403,42 +348,25 @@ export default function OrderDetailPage({ params }) {
         <div className="cost-breakdown">
           <div className="card-title mb-16">📊 Chi Tiết Chia Tiền</div>
 
-          {eatingItems.length > 0 && (
-            <>
-              <div className="cost-row">
-                <span className="text-muted">Tổng bill thường</span>
-                <span className="font-bold">{formatMoney(order.total_bill)}</span>
-              </div>
-              {eatingItems.filter(i => i.extra_item_cost > 0).map(item => (
-                <div key={item.id} className="cost-row">
-                  <span className="text-muted">Trừ: {item.member_name} ({item.extra_item_description})</span>
-                  <span style={{ color: 'var(--status-finalized)' }}>-{formatMoney(item.extra_item_cost)}</span>
-                </div>
-              ))}
-              <div className="cost-row">
-                <span className="text-muted">Chia đều cho {eatingItems.length} người</span>
-                <span className="font-bold text-accent">{formatMoney(order.shared_cost_per_person)}/người</span>
-              </div>
-            </>
-          )}
-
-          {chayItems.length > 0 && (
-            <>
-              <div className="cost-row" style={{ marginTop: '12px' }}>
-                <span className="text-muted">Tổng bill chay</span>
-                <span className="font-bold">{formatMoney(order.total_bill_chay)}</span>
-              </div>
-              <div className="cost-row">
-                <span className="text-muted">Chia đều cho {chayItems.length} người</span>
-                <span className="font-bold text-accent">{formatMoney(order.shared_cost_per_person_chay)}/người</span>
-              </div>
-            </>
-          )}
+          <div className="cost-row">
+            <span className="text-muted">Tổng bill</span>
+            <span className="font-bold">{formatMoney(order.total_bill)}</span>
+          </div>
+          {eatingItems.filter(i => i.extra_item_cost > 0).map(item => (
+            <div key={item.id} className="cost-row">
+              <span className="text-muted">Trừ: {item.member_name} ({item.extra_item_description})</span>
+              <span style={{ color: 'var(--status-finalized)' }}>-{formatMoney(item.extra_item_cost)}</span>
+            </div>
+          ))}
+          <div className="cost-row">
+            <span className="text-muted">Chia đều cho {eatingItems.length} người</span>
+            <span className="font-bold text-accent">{formatMoney(order.shared_cost_per_person)}/người</span>
+          </div>
 
           <div className="cost-row" style={{ borderTop: '2px solid var(--border-medium)', paddingTop: '16px', marginTop: '8px' }}>
             <span>Tổng</span>
             <span className="font-bold text-accent" style={{ fontSize: '1.2rem' }}>
-              {formatMoney(order.total_bill + order.total_bill_chay)}
+              {formatMoney(order.total_bill)}
             </span>
           </div>
         </div>

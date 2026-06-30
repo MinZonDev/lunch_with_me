@@ -380,7 +380,7 @@ export default function DepositPage() {
                 {spending.map((item, idx) => (
                   <div key={idx} className="order-item eating" style={{ padding: '12px 16px' }}>
                     <div style={{ width: '36px', textAlign: 'center', fontSize: '1.2rem' }}>
-                      {item.is_chay ? '🥬' : '🍖'}
+                      🍖
                     </div>
                     <div className="item-info" style={{ flex: 1 }}>
                       <div className="member-name" style={{ fontSize: '0.88rem' }}>

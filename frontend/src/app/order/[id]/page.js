@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, use } from 'react';
 import { ordersAPI, orderItemsAPI, membersAPI, formatMoney, getInitials, formatDate } from '@/lib/api';
-import { isAdmin } from '@/lib/auth';
+import { isAdmin, getUser } from '@/lib/auth';
 import { useToast } from '@/components/Toast';
 import Link from 'next/link';
 
@@ -20,6 +20,7 @@ export default function OrderDetailPage({ params }) {
   const [linksDraft, setLinksDraft] = useState([]);
   const addToast = useToast();
   const admin = isAdmin();
+  const currentUser = getUser();
 
   const fetchOrder = useCallback(async () => {
     try {
@@ -57,6 +58,16 @@ export default function OrderDetailPage({ params }) {
     try {
       await ordersAPI.reopen(orderId);
       addToast('Đã mở lại order!');
+      fetchOrder();
+    } catch (err) {
+      addToast(err.message, 'error');
+    }
+  };
+
+  const handleCancelItem = async (itemId) => {
+    try {
+      await orderItemsAPI.delete(orderId, itemId);
+      addToast('Đã hủy món');
       fetchOrder();
     } catch (err) {
       addToast(err.message, 'error');
@@ -128,6 +139,8 @@ export default function OrderDetailPage({ params }) {
   const eatingItems = order.items.filter((i) => i.is_eating);
   const notEatingItems = order.items.filter((i) => !i.is_eating);
   const isFinalized = order.status === 'finalized';
+  const deadlinePassed = order.order_deadline && new Date(order.order_deadline + 'Z') <= new Date();
+  const canCancel = order.status === 'open' && !deadlinePassed && !isFinalized;
 
   return (
     <>
@@ -295,6 +308,16 @@ export default function OrderDetailPage({ params }) {
                       title="Set món thêm"
                     >
                       ➕
+                    </button>
+                  )}
+                  {canCancel && (admin || item.member_id === currentUser?.member_id) && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ color: 'var(--status-finalized)' }}
+                      onClick={() => handleCancelItem(item.id)}
+                      title="Hủy món"
+                    >
+                      ✕
                     </button>
                   )}
                 </div>

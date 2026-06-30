@@ -11,7 +11,12 @@
       "Bash(node -e ' *)",
       "Bash(grep -n \"formatMoney\\\\|₫\\\\|đồng\\\\|VND\\\\| k\\\\b\\\\|k</\\\\|k</\" D:/PROJECT/LUNCH_WITH_ME/lunch_with_me/frontend/src/app/page.js)",
       "Bash(gcloud config *)",
-      "Bash(xargs grep -l \"members\")"
+      "Bash(xargs grep -l \"members\")",
+      "Bash(not exist *)",
+      "Bash(cat requirements.txt)",
+      "Bash(cat pyproject.toml)",
+      "Bash(git diff *)",
+      "Bash(curl -s http://localhost:8001/api/health)"
     ]
   }
 }

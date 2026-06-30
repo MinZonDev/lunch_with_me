@@ -16,7 +16,9 @@
       "Bash(cat requirements.txt)",
       "Bash(cat pyproject.toml)",
       "Bash(git diff *)",
-      "Bash(curl -s http://localhost:8001/api/health)"
+      "Bash(curl -s http://localhost:8001/api/health)",
+      "Bash(gcloud run *)",
+      "Bash(gcloud builds submit *)"
     ]
   }
 }

@@ -11,6 +11,9 @@ export default function RestaurantsPage() {
   const [editing, setEditing] = useState(null); // null = create, object = edit
   const [name, setName] = useState('');
   const [link, setLink] = useState('');
+  const [beId, setBeId] = useState('');
+  const [beLat, setBeLat] = useState('');
+  const [beLon, setBeLon] = useState('');
   const [saving, setSaving] = useState(false);
   const addToast = useToast();
 
@@ -24,18 +27,25 @@ export default function RestaurantsPage() {
 
   useEffect(() => { load(); }, []);
 
-  const openCreate = () => { setEditing(null); setName(''); setLink(''); setShowForm(true); };
-  const openEdit = (r) => { setEditing(r); setName(r.name); setLink(r.link || ''); setShowForm(true); };
+  const openCreate = () => { setEditing(null); setName(''); setLink(''); setBeId(''); setBeLat(''); setBeLon(''); setShowForm(true); };
+  const openEdit = (r) => { setEditing(r); setName(r.name); setLink(r.link || ''); setBeId(r.be_restaurant_id || ''); setBeLat(r.be_lat ? String(r.be_lat) : ''); setBeLon(r.be_lon ? String(r.be_lon) : ''); setShowForm(true); };
 
   const handleSave = async () => {
     if (!name.trim()) { addToast('Nhập tên quán!', 'error'); return; }
     setSaving(true);
     try {
+      const payload = {
+        name: name.trim(),
+        link: link.trim() || null,
+        be_restaurant_id: beId.trim() || null,
+        be_lat: beLat ? parseFloat(beLat) : null,
+        be_lon: beLon ? parseFloat(beLon) : null,
+      };
       if (editing) {
-        await restaurantsAPI.update(editing.id, { name: name.trim(), link: link.trim() || null });
+        await restaurantsAPI.update(editing.id, payload);
         addToast('Đã cập nhật quán!');
       } else {
-        await restaurantsAPI.create({ name: name.trim(), link: link.trim() || null });
+        await restaurantsAPI.create(payload);
         addToast('Đã thêm quán mới!');
       }
       setShowForm(false);
@@ -86,6 +96,7 @@ export default function RestaurantsPage() {
               <tr>
                 <th>Tên quán</th>
                 <th>Link menu</th>
+                <th>Be Menu</th>
                 <th style={{ width: 120 }}></th>
               </tr>
             </thead>
@@ -96,7 +107,12 @@ export default function RestaurantsPage() {
                   <td>
                     {r.link
                       ? <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', fontSize: '0.85rem' }}>🔗 Xem link</a>
-                      : <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Chưa có link</span>}
+                      : <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>—</span>}
+                  </td>
+                  <td>
+                    {r.be_restaurant_id
+                      ? <span style={{ color: '#06d6a0', fontSize: '0.82rem', fontWeight: 600 }}>✅ #{r.be_restaurant_id}</span>
+                      : <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>Chưa cấu hình</span>}
                   </td>
                   <td>
                     <div className="flex gap-8">
@@ -134,6 +150,44 @@ export default function RestaurantsPage() {
                 value={link}
                 onChange={e => setLink(e.target.value)}
               />
+            </div>
+            <div style={{ borderTop: '1px solid var(--border-color)', margin: '8px 0 16px', paddingTop: 16 }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 12, fontWeight: 600 }}>
+                🛵 Cấu hình Be Menu <span style={{ fontWeight: 400 }}>(tùy chọn — để hiện danh sách món từ Be)</span>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Be Restaurant ID</label>
+                <input
+                  className="form-input"
+                  placeholder="VD: 51148"
+                  value={beId}
+                  onChange={e => setBeId(e.target.value)}
+                />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label">Latitude</label>
+                  <input
+                    className="form-input"
+                    placeholder="VD: 10.7725"
+                    value={beLat}
+                    onChange={e => setBeLat(e.target.value)}
+                    type="number"
+                    step="any"
+                  />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label">Longitude</label>
+                  <input
+                    className="form-input"
+                    placeholder="VD: 106.698"
+                    value={beLon}
+                    onChange={e => setBeLon(e.target.value)}
+                    type="number"
+                    step="any"
+                  />
+                </div>
+              </div>
             </div>
             <div className="modal-actions">
               <button className="btn btn-secondary" onClick={() => setShowForm(false)}>Hủy</button>

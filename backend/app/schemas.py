@@ -115,12 +115,18 @@ class MemberResponse(BaseModel):
 class RestaurantCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     link: Optional[str] = None
+    be_restaurant_id: Optional[str] = None
+    be_lat: Optional[float] = None
+    be_lon: Optional[float] = None
 
 
 class RestaurantUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     link: Optional[str] = None
     is_active: Optional[bool] = None
+    be_restaurant_id: Optional[str] = None
+    be_lat: Optional[float] = None
+    be_lon: Optional[float] = None
 
 
 class RestaurantResponse(BaseModel):
@@ -128,6 +134,9 @@ class RestaurantResponse(BaseModel):
     name: str
     link: Optional[str] = None
     is_active: bool
+    be_restaurant_id: Optional[str] = None
+    be_lat: Optional[float] = None
+    be_lon: Optional[float] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

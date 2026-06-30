@@ -209,32 +209,36 @@ export default function ReportsPage() {
               {/* Spend trend chart */}
               <div className="card mb-24">
                 <div className="card-title mb-16">📈 Xu Hướng Chi Tiêu Theo Ngày</div>
-                <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', height: '180px', overflowX: 'auto', padding: '8px 4px' }}>
-                  {report.days.map(d => {
-                    const h = Math.max(4, Math.round((d.total_bill / maxDayBill) * 140));
-                    return (
-                      <div key={d.order_date} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '44px' }}>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                          {formatMoney(d.total_bill)}
-                        </span>
-                        <div
-                          title={`${formatMoney(d.total_bill)} · ${d.eater_count} người`}
-                          style={{
-                            width: '28px',
-                            height: `${h}px`,
-                            background: 'linear-gradient(180deg, var(--accent-secondary), var(--accent-primary))',
-                            borderRadius: '6px 6px 2px 2px',
-                          }}
-                        />
-                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '6px', whiteSpace: 'nowrap' }}>
-                          {new Date(d.order_date).toLocaleDateString('vi-VN', { weekday: 'short' })}
-                        </span>
-                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                          {new Date(d.order_date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
-                        </span>
-                      </div>
-                    );
-                  })}
+                <div style={{ overflowX: 'auto', paddingBottom: '4px' }}>
+                  <div style={{ display: 'flex', gap: '10px', padding: '4px 4px 0', minWidth: 'min-content' }}>
+                    {report.days.map(d => {
+                      const h = Math.max(4, Math.round((d.total_bill / maxDayBill) * 140));
+                      return (
+                        <div key={d.order_date} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '44px' }}>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginBottom: '4px', whiteSpace: 'nowrap' }}>
+                            {formatMoney(d.total_bill)}
+                          </span>
+                          <div style={{ height: '140px', display: 'flex', alignItems: 'flex-end' }}>
+                            <div
+                              title={`${formatMoney(d.total_bill)} · ${d.eater_count} người`}
+                              style={{
+                                width: '28px',
+                                height: `${h}px`,
+                                background: 'linear-gradient(180deg, var(--accent-secondary), var(--accent-primary))',
+                                borderRadius: '6px 6px 2px 2px',
+                              }}
+                            />
+                          </div>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '6px', whiteSpace: 'nowrap' }}>
+                            {new Date(d.order_date).toLocaleDateString('vi-VN', { weekday: 'short' })}
+                          </span>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                            {new Date(d.order_date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 

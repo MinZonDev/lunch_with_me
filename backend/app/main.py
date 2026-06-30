@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.logging_config import setup_logging
 from app.database import init_db
 from app.routers import members, orders, order_items, deposits, reviews, auth
-from app.routers import reports, admin_router, restaurants, reminders, delegations
+from app.routers import reports, admin_router, restaurants, reminders, delegations, be_menu
 from app.middleware.logging_middleware import LoggingMiddleware
 from app.schemas import FrontendLogEntry
 
@@ -62,6 +62,7 @@ app.include_router(admin_router.router)
 app.include_router(restaurants.router)
 app.include_router(reminders.router)
 app.include_router(delegations.router)
+app.include_router(be_menu.router)
 
 
 @app.get("/api/health")

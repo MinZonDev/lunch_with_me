@@ -36,6 +36,10 @@ export default function HomePage() {
   const [deadlineTime, setDeadlineTime] = useState('11:30');
   const [menuName, setMenuName] = useState('');
   const [allowedMemberIds, setAllowedMemberIds] = useState(new Set());
+  const [beMenu, setBeMenu] = useState(null);
+  const [beMenuLoading, setBeMenuLoading] = useState(false);
+  const [beSearch, setBeSearch] = useState('');
+  const [beMenuDismissed, setBeMenuDismissed] = useState(false);
   const addToast = useToast();
   const admin = isAdmin();
   const currentUser = getUser();
@@ -87,6 +91,20 @@ export default function HomePage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  useEffect(() => {
+    const order = (activeOrderId ? todayOrders.find(o => o.id === activeOrderId) : todayOrders[0]) || null;
+    if (!order?.restaurant_id) { setBeMenu(null); return; }
+    const restaurant = restaurants.find(r => r.id === order.restaurant_id);
+    if (!restaurant?.be_restaurant_id) { setBeMenu(null); return; }
+    setBeMenuDismissed(false);
+    setBeSearch('');
+    setBeMenuLoading(true);
+    restaurantsAPI.beMenu(order.restaurant_id)
+      .then(data => setBeMenu(data))
+      .catch(() => setBeMenu(null))
+      .finally(() => setBeMenuLoading(false));
+  }, [todayOrders, activeOrderId, restaurants]);
+
   const openCreateModal = async () => {
     setMenuName('');
     setShowCreateModal(true);
@@ -122,7 +140,7 @@ export default function HomePage() {
         dish_name: dishName.trim(),
         note: dishNote.trim() || null,
       });
-      setDishName(''); setDishNote(''); setSelectedMember(null);
+      setDishName(''); setDishNote(''); setSelectedMember(null); setBeSearch('');
       const isProxy = selectedMember !== currentUser?.member_id;
       addToast(isProxy ? 'Đã đặt món giùm! 🤝' : 'Đã chọn món! 🍚');
       fetchData();
@@ -366,8 +384,81 @@ export default function HomePage() {
                   )}
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Tên Món</label>
-                  <input type="text" className="form-input" placeholder="VD: Gà phi lê, Cá ngừ kho tiêu..." value={dishName} onChange={e => setDishName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSubmitDish()} />
+                  <label className="form-label">
+                    Tên Món
+                    {beMenuLoading && <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginLeft: 8, fontWeight: 400 }}>⏳ Đang tải menu...</span>}
+                    {beMenu && !beMenuDismissed && <span style={{ color: '#06d6a0', fontSize: '0.75rem', marginLeft: 8, fontWeight: 400 }}>🛵 Be Menu</span>}
+                  </label>
+                  {beMenu && !beMenuDismissed ? (
+                    <div>
+                      {dishName ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 8, background: 'var(--accent-primary)20', border: '1.5px solid var(--accent-primary)', marginBottom: 8 }}>
+                          <span style={{ flex: 1, fontWeight: 600, fontSize: '0.9rem' }}>✅ {dishName}</span>
+                          <button onClick={() => { setDishName(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '1rem', lineHeight: 1 }}>✕</button>
+                        </div>
+                      ) : (
+                        <input
+                          type="text"
+                          className="form-input"
+                          placeholder="🔍 Tìm món..."
+                          value={beSearch}
+                          onChange={e => setBeSearch(e.target.value)}
+                          style={{ marginBottom: 8 }}
+                          autoComplete="off"
+                        />
+                      )}
+                      {!dishName && (
+                        <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 8 }}>
+                          {beMenu.items
+                            .filter(i => !beSearch || i.name.toLowerCase().includes(beSearch.toLowerCase()) || i.category.toLowerCase().includes(beSearch.toLowerCase()))
+                            .slice(0, 30)
+                            .map((item, idx, arr) => (
+                              <button
+                                key={item.id}
+                                onClick={() => { setDishName(item.name); setBeSearch(''); }}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: 8,
+                                  width: '100%', textAlign: 'left', padding: '9px 12px',
+                                  background: 'none', border: 'none', cursor: 'pointer',
+                                  borderBottom: idx < arr.length - 1 ? '1px solid var(--border-color)' : 'none',
+                                  color: 'var(--text-primary)',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                              >
+                                <span style={{ flex: 1, fontSize: '0.88rem', fontWeight: 500 }}>
+                                  {item.is_best_seller && <span style={{ marginRight: 4 }}>⭐</span>}
+                                  {item.name}
+                                </span>
+                                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{item.price_display}</span>
+                              </button>
+                            ))
+                          }
+                          {beMenu.items.filter(i => !beSearch || i.name.toLowerCase().includes(beSearch.toLowerCase()) || i.category.toLowerCase().includes(beSearch.toLowerCase())).length === 0 && (
+                            <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Không tìm thấy món phù hợp</div>
+                          )}
+                        </div>
+                      )}
+                      <button
+                        onClick={() => { setBeMenuDismissed(true); setBeSearch(''); }}
+                        style={{ marginTop: 6, fontSize: '0.75rem', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                      >
+                        Nhập thủ công →
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <input type="text" className="form-input" placeholder="VD: Gà phi lê, Cá ngừ kho tiêu..." value={dishName} onChange={e => setDishName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSubmitDish()} />
+                      {beMenu && beMenuDismissed && (
+                        <button
+                          onClick={() => { setBeMenuDismissed(false); setDishName(''); }}
+                          style={{ marginTop: 4, fontSize: '0.75rem', color: 'var(--accent-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                        >
+                          ← Chọn từ menu Be
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="form-group">
                   <label className="form-label">Ghi chú (tùy chọn)</label>

@@ -14,6 +14,9 @@ def _res(ns) -> RestaurantResponse:
         name=ns.name,
         link=getattr(ns, "link", None),
         is_active=getattr(ns, "is_active", True),
+        be_restaurant_id=getattr(ns, "be_restaurant_id", None),
+        be_lat=getattr(ns, "be_lat", None),
+        be_lon=getattr(ns, "be_lon", None),
         created_at=ns.created_at,
     )
 
@@ -46,7 +49,12 @@ def create_restaurant(data: RestaurantCreate, db=Depends(get_db), _=Depends(get_
         raise HTTPException(status_code=400, detail="Tên quán đã tồn tại")
     new_id = _next_id(db, "restaurants")
     now = datetime.now(timezone.utc)
-    doc = {"id": new_id, "name": data.name, "link": data.link, "is_active": True, "created_at": now}
+    doc = {
+        "id": new_id, "name": data.name, "link": data.link, "is_active": True, "created_at": now,
+        "be_restaurant_id": data.be_restaurant_id,
+        "be_lat": data.be_lat,
+        "be_lon": data.be_lon,
+    }
     db.collection("restaurants").document(str(new_id)).set(doc)
     return _res(_to_ns(doc))
 
@@ -63,6 +71,12 @@ def update_restaurant(restaurant_id: int, data: RestaurantUpdate, db=Depends(get
         updates["link"] = data.link
     if data.is_active is not None:
         updates["is_active"] = data.is_active
+    if data.be_restaurant_id is not None:
+        updates["be_restaurant_id"] = data.be_restaurant_id
+    if data.be_lat is not None:
+        updates["be_lat"] = data.be_lat
+    if data.be_lon is not None:
+        updates["be_lon"] = data.be_lon
     if updates:
         ref.update(updates)
     return _res(_to_ns(ref.get().to_dict()))

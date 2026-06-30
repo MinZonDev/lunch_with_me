@@ -112,6 +112,7 @@ export const restaurantsAPI = {
   create: (data) => fetchAPI('/api/restaurants', { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data) => fetchAPI(`/api/restaurants/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id) => fetchAPI(`/api/restaurants/${id}`, { method: 'DELETE' }),
+  beMenu: (restaurantId) => fetchAPI(`/api/be/menu/${restaurantId}`),
 };
 
 // ============== Reminders ==============

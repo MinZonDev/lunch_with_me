@@ -182,6 +182,16 @@ def get_me(current_user=Depends(get_current_user)):
     return _user_response(current_user)
 
 
+@router.get("/firebase-token")
+def get_firebase_token(current_user=Depends(get_current_user)):
+    """Mint a Firebase custom token so the client can open a realtime
+    Firestore listener as the same identity as the JWT-authenticated user."""
+    from firebase_admin import auth as fb_auth
+
+    token = fb_auth.create_custom_token(str(current_user.id))
+    return {"firebase_token": token.decode() if isinstance(token, bytes) else token}
+
+
 @router.put("/me", response_model=UserResponse)
 def update_me(data: UserUpdate, current_user=Depends(get_current_user), db=Depends(get_db)):
     updates = {}

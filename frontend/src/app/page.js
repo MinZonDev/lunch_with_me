@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { ordersAPI, orderItemsAPI, membersAPI, restaurantsAPI, delegationsAPI, formatMoney, getInitials, getTodayString } from '@/lib/api';
 import { useToast } from '@/components/Toast';
 import { isAdmin, getUser } from '@/lib/auth';
+import { useOrderRealtime } from '@/lib/useOrderRealtime';
 import logger from '@/lib/logger';
 import Link from 'next/link';
 
@@ -90,6 +91,9 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Real-time: refetch whenever anyone else changes today's orders/items
+  useOrderRealtime(todayOrders.map(o => o.id), fetchData);
 
   useEffect(() => {
     const order = (activeOrderId ? todayOrders.find(o => o.id === activeOrderId) : todayOrders[0]) || null;

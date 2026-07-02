@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, use } from 'react';
 import { ordersAPI, orderItemsAPI, membersAPI, formatMoney, getInitials, formatDate } from '@/lib/api';
 import { isAdmin, getUser } from '@/lib/auth';
 import { useToast } from '@/components/Toast';
+import { useOrderRealtime } from '@/lib/useOrderRealtime';
 import Link from 'next/link';
 
 export default function OrderDetailPage({ params }) {
@@ -60,6 +61,9 @@ export default function OrderDetailPage({ params }) {
       return next;
     });
   };
+
+  // Real-time: refetch whenever anyone changes this order/items in Firestore
+  useOrderRealtime(orderId ? Number(orderId) : null, fetchOrder);
 
   const handleLock = async () => {
     try {

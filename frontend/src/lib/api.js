@@ -39,6 +39,7 @@ export const authAPI = {
   register: (data) => fetchAPI('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   login: (data) => fetchAPI('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   me: () => fetchAPI('/api/auth/me'),
+  firebaseToken: () => fetchAPI('/api/auth/firebase-token'),
   updateMe: (data) => fetchAPI('/api/auth/me', { method: 'PUT', body: JSON.stringify(data) }),
   changePassword: (data) => fetchAPI('/api/auth/change-password', { method: 'POST', body: JSON.stringify(data) }),
   forgotPassword: (email) => fetchAPI('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),

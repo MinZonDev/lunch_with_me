@@ -19,6 +19,8 @@ export default function OrderDetailPage({ params }) {
   const [extraCost, setExtraCost] = useState('');
   const [editingLinks, setEditingLinks] = useState(false);
   const [linksDraft, setLinksDraft] = useState([]);
+  const [editingBill, setEditingBill] = useState(false);
+  const [newBill, setNewBill] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
   const [beChecked, setBeChecked] = useState(new Set());
   const addToast = useToast();
@@ -104,6 +106,22 @@ export default function OrderDetailPage({ params }) {
     try {
       await ordersAPI.finalize(orderId, { total_bill: bill });
       addToast('Đã chốt order! 🎉');
+      fetchOrder();
+    } catch (err) {
+      addToast(err.message, 'error');
+    }
+  };
+
+  const handleUpdateBill = async () => {
+    const bill = parseInt(newBill) || 0;
+    if (bill === 0) {
+      addToast('Nhập tổng tiền bill!', 'error');
+      return;
+    }
+    try {
+      await ordersAPI.finalize(orderId, { total_bill: bill });
+      addToast('Đã cập nhật bill & chia lại tiền!');
+      setEditingBill(false);
       fetchOrder();
     } catch (err) {
       addToast(err.message, 'error');
@@ -480,7 +498,30 @@ export default function OrderDetailPage({ params }) {
       {/* Cost Breakdown (after finalized) */}
       {isFinalized && (
         <div className="cost-breakdown">
-          <div className="card-title mb-16">📊 Chi Tiết Chia Tiền</div>
+          <div className="flex items-center justify-between mb-16">
+            <div className="card-title" style={{ margin: 0 }}>📊 Chi Tiết Chia Tiền</div>
+            {admin && !editingBill && (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => { setNewBill(order.total_bill ? order.total_bill.toString() : ''); setEditingBill(true); }}
+              >✏️ Cập nhật bill</button>
+            )}
+          </div>
+
+          {admin && editingBill && (
+            <div className="flex gap-8 mb-16" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+              <input
+                type="number"
+                className="form-input"
+                placeholder="Tổng bill (k)"
+                value={newBill}
+                onChange={(e) => setNewBill(e.target.value)}
+                style={{ flex: '1', minWidth: '120px' }}
+              />
+              <button className="btn btn-primary btn-sm" onClick={handleUpdateBill}>💾 Lưu & chia lại</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setEditingBill(false)}>✕</button>
+            </div>
+          )}
 
           <div className="cost-row">
             <span className="text-muted">Tổng bill</span>

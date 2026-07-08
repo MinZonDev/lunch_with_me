@@ -2,10 +2,11 @@
 Unit tests for cost_calculator.py
 
 Key invariants tested:
-- sum(payments) == total_bill always (no rounding drift)
+- Everyone pays the same base share, rounded UP (ceil)
+- sum(payments) >= total_bill (surplus at most n-1 from rounding)
 - Extras are allocated to correct individuals
 - Zero-bill and no-eater edge cases
-- shared_cost_per_person reflects base share (before extras)
+- shared_cost_per_person reflects the rounded-up base share (before extras)
 """
 import pytest
 from types import SimpleNamespace
@@ -25,20 +26,15 @@ class TestSplitBill:
         assert payments == [30, 30, 30]
         assert sum(payments) == 90
 
-    def test_sum_equals_total_when_indivisible(self):
-        """100 / 3 người — không chia hết, nhưng tổng phải bằng 100."""
+    def test_round_up_when_indivisible(self):
+        """100 / 3 người — làm tròn lên, ai cũng trả 34."""
         payments = _split_bill(100, self._users([0, 0, 0]))
-        assert sum(payments) == 100
-        # Người đầu được +1 từ remainder
-        assert payments[0] == 34
-        assert payments[1] == 33
-        assert payments[2] == 33
+        assert payments == [34, 34, 34]
 
-    def test_sum_equals_total_larger_remainder(self):
-        """101 / 3 — remainder=2, hai người đầu được 34, người cuối 33."""
+    def test_round_up_larger_remainder(self):
+        """101 / 3 — ceil(101/3)=34, ai cũng trả 34."""
         payments = _split_bill(101, self._users([0, 0, 0]))
-        assert sum(payments) == 101
-        assert payments == [34, 34, 33]
+        assert payments == [34, 34, 34]
 
     def test_extras_allocated_individually(self):
         """Total=105, extras=[0,10,5]: shared_base=90 /3=30 each + own extra."""
@@ -47,14 +43,11 @@ class TestSplitBill:
         assert sum(payments) == 105
 
     def test_extras_with_remainder(self):
-        """Total=100, extras=[5, 0, 0]: shared_base=95, 95//3=31 r=2."""
+        """Total=100, extras=[5, 0, 0]: shared_base=95, ceil(95/3)=32."""
         payments = _split_bill(100, self._users([5, 0, 0]))
-        # shared_base=95, base=31, remainder=2
-        # person0: 31+1+5=37, person1: 31+1+0=32, person2: 31+0+0=31
-        assert sum(payments) == 100
-        assert payments[0] == 37  # extra + remainder
+        assert payments[0] == 37  # 32 + extra 5
         assert payments[1] == 32
-        assert payments[2] == 31
+        assert payments[2] == 32
 
     def test_single_person_gets_all(self):
         payments = _split_bill(150, self._users([0]))
@@ -67,8 +60,7 @@ class TestSplitBill:
 
     def test_two_people_odd_bill(self):
         payments = _split_bill(99, self._users([0, 0]))
-        assert sum(payments) == 99
-        assert payments == [50, 49]
+        assert payments == [50, 50]
 
     def test_zero_total_bill(self):
         payments = _split_bill(0, self._users([0, 0, 0]))
@@ -88,11 +80,15 @@ class TestSplitBill:
         assert sum(payments) == 1000
 
     def test_large_group_indivisible(self):
-        """1001 / 10 = 100 r1 → đúng một người được 101."""
+        """1001 / 10 = ceil → 101, ai cũng trả 101."""
         payments = _split_bill(1001, self._users([0] * 10))
-        assert sum(payments) == 1001
-        assert payments.count(101) == 1
-        assert payments.count(100) == 9
+        assert payments == [101] * 10
+
+    def test_surplus_bounded_by_group_size(self):
+        """Tổng thu vượt bill tối đa (n-1) do làm tròn lên."""
+        for total in range(90, 110):
+            payments = _split_bill(total, self._users([0, 0, 0]))
+            assert total <= sum(payments) <= total + 2
 
 
 # ──────────────────────────────────────────────────────────────
@@ -139,16 +135,15 @@ class TestCalculateCosts:
         assert all(v == 30 for v in costs.values())
         assert sum(costs.values()) == 90
 
-    def test_indivisible_bill_sum_correct(self):
-        """100k / 3 người: tổng phải bằng 100."""
+    def test_indivisible_bill_rounds_up(self):
+        """100k / 3 người: ai cũng trả 34, hiển thị 34."""
         order = _make_order(100)
         items = [_make_item(i, i, True) for i in range(1, 4)]
         result = calculate_costs(order, items)
 
         costs = [c["total_cost"] for c in result["item_costs"] if c["member_id"] in {1, 2, 3}]
-        assert sum(costs) == 100
-        # base_share hiển thị = 33 (floor)
-        assert result["shared_cost_per_person"] == 33
+        assert costs == [34, 34, 34]
+        assert result["shared_cost_per_person"] == 34
 
     def test_extras_deducted_from_shared(self):
         """
@@ -181,7 +176,8 @@ class TestCalculateCosts:
 
         costs = {c["member_id"]: c["total_cost"] for c in result["item_costs"]}
         assert costs[2] == 0
-        assert costs[1] + costs[3] == 100
+        assert costs[1] == 50
+        assert costs[3] == 50
 
     def test_all_item_costs_present(self):
         """Tất cả items (kể cả không ăn) đều có trong item_costs."""
@@ -196,25 +192,25 @@ class TestCalculateCosts:
         item_ids = {c["item_id"] for c in result["item_costs"]}
         assert item_ids == {1, 2, 3}
 
-    def test_sum_always_equals_total_bill(self):
-        """Tổng tiền của những người ăn phải luôn bằng total_bill."""
+    def test_everyone_pays_equal_rounded_up(self):
+        """253 / 7 người = ceil → 37, ai cũng trả như nhau."""
         order = _make_order(253)
         items = [_make_item(i, i, True) for i in range(1, 8)]  # 7 người
         result = calculate_costs(order, items)
 
-        eating_costs = sum(
+        eating_costs = [
             c["total_cost"] for c in result["item_costs"]
             if any(it.id == c["item_id"] and it.is_eating for it in items)
-        )
-        assert eating_costs == 253
+        ]
+        assert eating_costs == [37] * 7
 
-    def test_shared_cost_per_person_is_floor_of_base(self):
-        """shared_cost_per_person = (total - extras) // n (không phải round)."""
+    def test_shared_cost_per_person_is_ceil_of_base(self):
+        """shared_cost_per_person = ceil((total - extras) / n)."""
         order = _make_order(100)
         items = [_make_item(i, i, True) for i in range(1, 4)]  # 3 người
         result = calculate_costs(order, items)
-        # (100-0)//3 = 33
-        assert result["shared_cost_per_person"] == 33
+        # ceil((100-0)/3) = 34
+        assert result["shared_cost_per_person"] == 34
 
     def test_single_eater_pays_all(self):
         order = _make_order(150)
@@ -235,8 +231,7 @@ class TestCalculateCosts:
             _make_item(1, 1, True, extra=60),
             _make_item(2, 2, True, extra=0),
         ]
-        # shared_base = 50 - 60 = -10, base = -10//2 = -5
+        # shared_base = 50 - 60 = -10, base = ceil(-10/2) = -5
         result = calculate_costs(order, items)
-        # Tổng vẫn phải bằng 50
         eating_costs = sum(c["total_cost"] for c in result["item_costs"])
         assert eating_costs == 50

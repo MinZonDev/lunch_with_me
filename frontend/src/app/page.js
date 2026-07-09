@@ -41,6 +41,8 @@ export default function HomePage() {
   const [beMenuLoading, setBeMenuLoading] = useState(false);
   const [beSearch, setBeSearch] = useState('');
   const [beMenuDismissed, setBeMenuDismissed] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [submittingDish, setSubmittingDish] = useState(false);
   const addToast = useToast();
   const admin = isAdmin();
   const currentUser = getUser();
@@ -119,6 +121,8 @@ export default function HomePage() {
   };
 
   const handleCreateOrder = async () => {
+    if (creating) return;
+    setCreating(true);
     try {
       const order = await ordersAPI.create({
         order_date: getTodayString(),
@@ -133,11 +137,14 @@ export default function HomePage() {
       setActiveOrderId(order.id); // switch to newly created menu
       addToast(`Đã tạo menu${order.name ? ` "${order.name}"` : ''}!`);
     } catch (err) { addToast(err.message, 'error'); }
+    finally { setCreating(false); }
   };
 
   const handleSubmitDish = async () => {
+    if (submittingDish) return;
     if (!selectedMember) { addToast('Chọn tên trước!', 'error'); return; }
     if (!dishName.trim()) { addToast('Nhập tên món!', 'error'); return; }
+    setSubmittingDish(true);
     try {
       await orderItemsAPI.create(todayOrder.id, {
         member_id: selectedMember,
@@ -151,6 +158,8 @@ export default function HomePage() {
     } catch (err) {
       logger.error('Submit dish failed', { member_id: selectedMember, error: err.message });
       addToast(err.message, 'error');
+    } finally {
+      setSubmittingDish(false);
     }
   };
 
@@ -208,7 +217,9 @@ export default function HomePage() {
         </div>
         <div className="modal-actions">
           <button className="btn btn-secondary" onClick={() => setShowCreateModal(false)}>Hủy</button>
-          <button className="btn btn-primary" onClick={handleCreateOrder}>✨ Tạo</button>
+          <button className="btn btn-primary" onClick={handleCreateOrder} disabled={creating}>
+            {creating ? '⏳ Đang tạo...' : '✨ Tạo'}
+          </button>
         </div>
       </div>
     </div>
@@ -468,7 +479,9 @@ export default function HomePage() {
                   <label className="form-label">Ghi chú (tùy chọn)</label>
                   <input type="text" className="form-input" placeholder="VD: Ít cay, thêm rau..." value={dishNote} onChange={e => setDishNote(e.target.value)} />
                 </div>
-                <button className="btn btn-primary w-full" onClick={handleSubmitDish}>🍚 Chọn Món</button>
+                <button className="btn btn-primary w-full" onClick={handleSubmitDish} disabled={submittingDish}>
+                  {submittingDish ? '⏳ Đang gửi...' : '🍚 Chọn Món'}
+                </button>
               </div>
             )}
 

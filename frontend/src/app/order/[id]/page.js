@@ -24,6 +24,7 @@ export default function OrderDetailPage({ params }) {
   const [newBill, setNewBill] = useState('');
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
   const [beChecked, setBeChecked] = useState(new Set());
@@ -102,17 +103,25 @@ export default function OrderDetailPage({ params }) {
   };
 
   const handleFinalize = async () => {
+    if (submitting) return;
     const bill = parseInt(totalBill) || 0;
     if (bill === 0) {
       addToast('Nhập tổng tiền bill!', 'error');
       return;
     }
+    const eaters = order.items.filter(i => i.is_eating);
+    const totalExtra = eaters.reduce((s, i) => s + (i.extra_item_cost || 0), 0);
+    const perPerson = eaters.length > 0 ? Math.ceil((bill - totalExtra) / eaters.length) : 0;
+    if (!confirm(`Chốt bill ${formatMoney(bill)} đ cho ${eaters.length} người ăn (~${formatMoney(perPerson)} đ/người)?`)) return;
+    setSubmitting(true);
     try {
       await ordersAPI.finalize(orderId, { total_bill: bill });
       addToast('Đã chốt order! 🎉');
       fetchOrder();
     } catch (err) {
       addToast(err.message, 'error');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -139,11 +148,13 @@ export default function OrderDetailPage({ params }) {
   };
 
   const handleUpdateBill = async () => {
+    if (submitting) return;
     const bill = parseInt(newBill) || 0;
     if (bill === 0) {
       addToast('Nhập tổng tiền bill!', 'error');
       return;
     }
+    setSubmitting(true);
     try {
       await ordersAPI.finalize(orderId, { total_bill: bill });
       addToast('Đã cập nhật bill & chia lại tiền!');
@@ -151,6 +162,8 @@ export default function OrderDetailPage({ params }) {
       fetchOrder();
     } catch (err) {
       addToast(err.message, 'error');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -508,8 +521,8 @@ export default function OrderDetailPage({ params }) {
                       </div>
                       {admin && editingExtra === item.id && (
                         <div className="flex gap-8" style={{ padding: '10px 14px', flexWrap: 'wrap', borderBottom: idx < items.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}>
-                          <input type="text" className="form-input" placeholder="VD: Trà tắc, Cơm thêm" value={extraDesc} onChange={(e) => setExtraDesc(e.target.value)} style={{ flex: '1', minWidth: '150px' }} />
-                          <input type="number" className="form-input" placeholder="Giá (k)" value={extraCost} onChange={(e) => setExtraCost(e.target.value)} style={{ width: '100px' }} />
+                          <input type="text" className="form-input" placeholder="VD: Trà tắc, Cơm thêm" value={extraDesc} onChange={(e) => setExtraDesc(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSaveExtra(item.id)} style={{ flex: '1', minWidth: '150px' }} />
+                          <input type="number" className="form-input" placeholder="Giá (k)" value={extraCost} onChange={(e) => setExtraCost(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSaveExtra(item.id)} style={{ width: '100px' }} />
                           <button className="btn btn-primary btn-sm" onClick={() => handleSaveExtra(item.id)}>💾</button>
                           <button className="btn btn-ghost btn-sm" onClick={() => setEditingExtra(null)}>✕</button>
                         </div>
@@ -554,10 +567,17 @@ export default function OrderDetailPage({ params }) {
               placeholder="VD: 252"
               value={totalBill}
               onChange={(e) => setTotalBill(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleFinalize()}
             />
+            {parseInt(totalBill) > 0 && (
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '6px 0 0' }}>
+                = <strong style={{ color: 'var(--accent-primary)' }}>{formatMoney(parseInt(totalBill))} đ</strong>
+                {eatingItems.length > 0 && ` · ~${formatMoney(Math.ceil((parseInt(totalBill) - eatingItems.reduce((s, i) => s + (i.extra_item_cost || 0), 0)) / eatingItems.length))} đ/người`}
+              </p>
+            )}
           </div>
-          <button className="btn btn-primary btn-lg w-full" onClick={handleFinalize}>
-            🎉 Chốt Order & Chia Tiền
+          <button className="btn btn-primary btn-lg w-full" onClick={handleFinalize} disabled={submitting}>
+            {submitting ? '⏳ Đang chốt...' : '🎉 Chốt Order & Chia Tiền'}
           </button>
         </div>
       )}
@@ -576,17 +596,28 @@ export default function OrderDetailPage({ params }) {
           </div>
 
           {admin && editingBill && (
-            <div className="flex gap-8 mb-16" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
-              <input
-                type="number"
-                className="form-input"
-                placeholder="Tổng bill (k)"
-                value={newBill}
-                onChange={(e) => setNewBill(e.target.value)}
-                style={{ flex: '1', minWidth: '120px' }}
-              />
-              <button className="btn btn-primary btn-sm" onClick={handleUpdateBill}>💾 Lưu & chia lại</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => setEditingBill(false)}>✕</button>
+            <div className="mb-16">
+              <div className="flex gap-8" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+                <input
+                  type="number"
+                  className="form-input"
+                  placeholder="Tổng bill (k)"
+                  value={newBill}
+                  onChange={(e) => setNewBill(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleUpdateBill()}
+                  style={{ flex: '1', minWidth: '120px' }}
+                  autoFocus
+                />
+                <button className="btn btn-primary btn-sm" onClick={handleUpdateBill} disabled={submitting}>
+                  {submitting ? '⏳...' : '💾 Lưu & chia lại'}
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setEditingBill(false)}>✕</button>
+              </div>
+              {parseInt(newBill) > 0 && (
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '6px 0 0' }}>
+                  = <strong style={{ color: 'var(--accent-primary)' }}>{formatMoney(parseInt(newBill))} đ</strong>
+                </p>
+              )}
             </div>
           )}
 

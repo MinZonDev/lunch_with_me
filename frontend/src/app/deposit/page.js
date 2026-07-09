@@ -80,6 +80,7 @@ export default function DepositPage() {
   const [editingTxn, setEditingTxn] = useState(null);
   const [editAmount, setEditAmount] = useState('');
   const [editNote, setEditNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const addToast = useToast();
 
   const fetchData = useCallback(async () => {
@@ -104,7 +105,9 @@ export default function DepositPage() {
   const openModal = (mode) => { setModalMode(mode); setDepositAmount(''); setDepositNote(''); setAdminMemberId(''); setShowModal(true); };
 
   const handleDeposit = async () => {
+    if (submitting) return;
     if (!depositAmount || parseInt(depositAmount) <= 0) { addToast('Nhập số tiền hợp lệ!', 'error'); return; }
+    setSubmitting(true);
     try {
       if (modalMode === 'charge') {
         if (!adminMemberId) { addToast('Chọn thành viên!', 'error'); return; }
@@ -119,6 +122,7 @@ export default function DepositPage() {
       setShowModal(false);
       fetchData();
     } catch (err) { addToast(err.message, 'error'); }
+    finally { setSubmitting(false); }
   };
 
   const handleApprove = async (id) => {
@@ -562,6 +566,11 @@ export default function DepositPage() {
             <div className="form-group">
               <label className="form-label">Số tiền (nghìn đồng)</label>
               <input type="number" className="form-input" placeholder="VD: 50" value={depositAmount} onChange={e => setDepositAmount(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleDeposit()} />
+              {parseInt(depositAmount) > 0 && (
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '6px 0 0' }}>
+                  = <strong style={{ color: modalMode === 'charge' ? '#ff6b6b' : '#06d6a0' }}>{formatMoney(parseInt(depositAmount))} đ</strong>
+                </p>
+              )}
             </div>
             <div className="form-group">
               <label className="form-label">Ghi chú {modalMode === 'charge' ? '(bắt buộc)' : '(tùy chọn)'}</label>
@@ -573,8 +582,9 @@ export default function DepositPage() {
                 className={`btn ${modalMode === 'charge' ? 'btn-secondary' : 'btn-primary'}`}
                 style={modalMode === 'charge' ? { background: 'rgba(255,107,107,0.15)', color: '#ff6b6b', border: '1px solid rgba(255,107,107,0.3)' } : {}}
                 onClick={handleDeposit}
+                disabled={submitting}
               >
-                {modalMode === 'charge' ? '📤 Thêm Khoản Chi' : admin ? '💰 Nạp Tiền' : '📤 Gửi Yêu Cầu'}
+                {submitting ? '⏳ Đang gửi...' : modalMode === 'charge' ? '📤 Thêm Khoản Chi' : admin ? '💰 Nạp Tiền' : '📤 Gửi Yêu Cầu'}
               </button>
             </div>
           </div>

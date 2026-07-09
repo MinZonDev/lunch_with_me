@@ -241,6 +241,8 @@ def update_order(order_id: int, data: DailyOrderUpdate, db=Depends(get_db), _=De
         updates["note"] = data.note
     if data.status is not None:
         updates["status"] = data.status
+    if data.name is not None:
+        updates["name"] = data.name.strip() or None
 
     if updates:
         ref.update(updates)
@@ -248,6 +250,20 @@ def update_order(order_id: int, data: DailyOrderUpdate, db=Depends(get_db), _=De
     order = _to_ns({**ref.get().to_dict()})
     items = _load_items_with_names(db, order_id)
     return _build_order_response(order, items)
+
+
+@router.delete("/{order_id}", status_code=204)
+def delete_order(order_id: int, db=Depends(get_db), _=Depends(get_current_admin)):
+    """Delete an order and all of its order items (admin only)."""
+    ref, order = _get_order_by_id(db, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    batch = db.batch()
+    for snap in db.collection("order_items").where("daily_order_id", "==", order_id).stream():
+        batch.delete(snap.reference)
+    batch.delete(ref)
+    batch.commit()
 
 
 @router.post("/{order_id}/lock", response_model=DailyOrderResponse)

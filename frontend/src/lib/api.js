@@ -79,6 +79,7 @@ export const ordersAPI = {
   get: (id) => fetchAPI(`/api/orders/${id}`),
   create: (data) => fetchAPI('/api/orders', { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data) => fetchAPI(`/api/orders/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => fetchAPI(`/api/orders/${id}`, { method: 'DELETE' }),
   lock: (id) => fetchAPI(`/api/orders/${id}/lock`, { method: 'POST' }),
   reopen: (id) => fetchAPI(`/api/orders/${id}/reopen`, { method: 'POST' }),
   finalize: (id, data) => fetchAPI(`/api/orders/${id}/finalize`, { method: 'POST', body: JSON.stringify(data) }),
@@ -103,6 +104,7 @@ export const depositsAPI = {
   create: (data) => fetchAPI('/api/deposits', { method: 'POST', body: JSON.stringify(data) }),
   approve: (id) => fetchAPI(`/api/deposits/${id}/approve`, { method: 'POST' }),
   charge: (data) => fetchAPI('/api/deposits/charge', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => fetchAPI(`/api/deposits/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id) => fetchAPI(`/api/deposits/${id}`, { method: 'DELETE' }),
 };
 

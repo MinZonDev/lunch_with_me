@@ -6,6 +6,7 @@ import { isAdmin, getUser } from '@/lib/auth';
 import { useToast } from '@/components/Toast';
 import { useOrderRealtime } from '@/lib/useOrderRealtime';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 export default function OrderDetailPage({ params }) {
   const resolvedParams = use(params);
@@ -21,6 +22,9 @@ export default function OrderDetailPage({ params }) {
   const [linksDraft, setLinksDraft] = useState([]);
   const [editingBill, setEditingBill] = useState(false);
   const [newBill, setNewBill] = useState('');
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const router = useRouter();
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
   const [beChecked, setBeChecked] = useState(new Set());
   const addToast = useToast();
@@ -112,6 +116,28 @@ export default function OrderDetailPage({ params }) {
     }
   };
 
+  const handleDeleteOrder = async () => {
+    if (!confirm('Xóa order này? Toàn bộ món đặt và chi phí của order sẽ bị xóa vĩnh viễn.')) return;
+    try {
+      await ordersAPI.delete(orderId);
+      addToast('Đã xóa order');
+      router.push('/');
+    } catch (err) {
+      addToast(err.message, 'error');
+    }
+  };
+
+  const handleSaveName = async () => {
+    try {
+      await ordersAPI.update(orderId, { name: nameDraft.trim() });
+      addToast('Đã cập nhật tên order');
+      setEditingName(false);
+      fetchOrder();
+    } catch (err) {
+      addToast(err.message, 'error');
+    }
+  };
+
   const handleUpdateBill = async () => {
     const bill = parseInt(newBill) || 0;
     if (bill === 0) {
@@ -151,10 +177,15 @@ export default function OrderDetailPage({ params }) {
         extra_item_description: extraDesc || null,
         extra_item_cost: parseInt(extraCost) || 0,
       });
+      if (order.status === 'finalized') {
+        await ordersAPI.finalize(orderId, { total_bill: order.total_bill });
+        addToast('Đã cập nhật món thêm & chia lại tiền');
+      } else {
+        addToast('Đã cập nhật món thêm');
+      }
       setEditingExtra(null);
       setExtraDesc('');
       setExtraCost('');
-      addToast('Đã cập nhật món thêm');
       fetchOrder();
     } catch (err) {
       addToast(err.message, 'error');
@@ -188,7 +219,33 @@ export default function OrderDetailPage({ params }) {
           <Link href="/" className="btn btn-ghost">← Quay lại</Link>
           <div>
             <h1>📋 Chi Tiết Order</h1>
-            <p>{formatDate(order.order_date)}</p>
+            {editingName ? (
+              <div className="flex gap-8 items-center mt-8">
+                <input
+                  className="form-input"
+                  placeholder="Tên order (VD: Cơm trưa)"
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
+                  style={{ width: 220 }}
+                  autoFocus
+                />
+                <button className="btn btn-primary btn-sm" onClick={handleSaveName}>💾</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setEditingName(false)}>✕</button>
+              </div>
+            ) : (
+              <p>
+                {formatDate(order.order_date)}{order.name ? ` · ${order.name}` : ''}
+                {admin && (
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    style={{ marginLeft: 6, padding: '2px 6px' }}
+                    title="Sửa tên order"
+                    onClick={() => { setNameDraft(order.name || ''); setEditingName(true); }}
+                  >✏️</button>
+                )}
+              </p>
+            )}
           </div>
         </div>
         <div className="flex gap-8 items-center mt-8">
@@ -201,6 +258,16 @@ export default function OrderDetailPage({ params }) {
           )}
           {order.status === 'locked' && (
             <button className="btn btn-secondary btn-sm" onClick={handleReopen}>🔓 Mở lại</button>
+          )}
+          {admin && isFinalized && (
+            <button className="btn btn-secondary btn-sm" onClick={handleReopen}>🔓 Mở lại order</button>
+          )}
+          {admin && (
+            <button
+              className="btn btn-ghost btn-sm"
+              style={{ color: 'var(--status-finalized)' }}
+              onClick={handleDeleteOrder}
+            >🗑️ Xóa order</button>
           )}
         </div>
       </div>
@@ -400,7 +467,7 @@ export default function OrderDetailPage({ params }) {
                       <div style={{
                         display: 'flex', alignItems: 'center', gap: 10,
                         padding: '10px 14px',
-                        borderBottom: idx < items.length - 1 || (admin && !isFinalized && editingExtra === item.id) ? '1px solid var(--border-subtle)' : 'none',
+                        borderBottom: idx < items.length - 1 || (admin && editingExtra === item.id) ? '1px solid var(--border-subtle)' : 'none',
                         opacity: beChecked.has(item.id) ? 0.5 : 1,
                         transition: 'opacity 0.15s',
                         background: beChecked.has(item.id) ? 'var(--bg-subtle)' : 'transparent',
@@ -428,18 +495,18 @@ export default function OrderDetailPage({ params }) {
                           )}
                         </div>
                         {isFinalized && <div className="item-cost">{formatMoney(item.total_cost)}</div>}
-                        {admin && !isFinalized && (
+                        {admin && (
                           <button
                             className="btn btn-ghost btn-sm"
                             onClick={() => { setEditingExtra(item.id); setExtraDesc(item.extra_item_description || ''); setExtraCost(item.extra_item_cost ? item.extra_item_cost.toString() : ''); }}
-                            title="Set món thêm"
-                          >➕</button>
+                            title={isFinalized ? 'Sửa món thêm (sẽ chia lại tiền)' : 'Set món thêm'}
+                          >{isFinalized ? '✏️' : '➕'}</button>
                         )}
                         {canCancel && (admin || item.member_id === currentUser?.member_id) && (
                           <button className="btn btn-ghost btn-sm" style={{ color: 'var(--status-finalized)' }} onClick={() => handleCancelItem(item.id)} title="Hủy món">✕</button>
                         )}
                       </div>
-                      {admin && !isFinalized && editingExtra === item.id && (
+                      {admin && editingExtra === item.id && (
                         <div className="flex gap-8" style={{ padding: '10px 14px', flexWrap: 'wrap', borderBottom: idx < items.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}>
                           <input type="text" className="form-input" placeholder="VD: Trà tắc, Cơm thêm" value={extraDesc} onChange={(e) => setExtraDesc(e.target.value)} style={{ flex: '1', minWidth: '150px' }} />
                           <input type="number" className="form-input" placeholder="Giá (k)" value={extraCost} onChange={(e) => setExtraCost(e.target.value)} style={{ width: '100px' }} />

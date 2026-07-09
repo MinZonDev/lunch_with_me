@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import calendar
 
 from app.database import get_db, _next_id, _to_ns
-from app.schemas import DepositCreate, ChargeCreate, DepositResponse, MemberBalanceResponse, DepositHistoryResponse, MemberDailyCost, SpendingItemResponse, MemberDetailResponse, MemberTransactionItem
+from app.schemas import DepositCreate, ChargeCreate, DepositUpdate, DepositResponse, MemberBalanceResponse, DepositHistoryResponse, MemberDailyCost, SpendingItemResponse, MemberDetailResponse, MemberTransactionItem
 from app.core.auth import get_current_user, get_current_admin
 
 router = APIRouter(prefix="/api/deposits", tags=["deposits"])
@@ -186,6 +186,26 @@ def approve_deposit(deposit_id: int, db=Depends(get_db), _=Depends(get_current_a
         raise HTTPException(status_code=400, detail="Deposit đã được duyệt")
     ref.update({"status": "approved"})
     d["status"] = "approved"
+    return _deposit_response(d, {d["member_id"]: _member_name(db, d["member_id"])})
+
+
+@router.put("/{deposit_id}", response_model=DepositResponse)
+def update_deposit(deposit_id: int, data: DepositUpdate, db=Depends(get_db), _=Depends(get_current_admin)):
+    """Admin sửa số tiền / ghi chú của một giao dịch nạp hoặc khoản chi."""
+    ref = db.collection("deposits").document(str(deposit_id))
+    doc = ref.get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="Deposit not found")
+
+    updates = {}
+    if data.amount is not None:
+        updates["amount"] = data.amount
+    if data.note is not None:
+        updates["note"] = data.note.strip() or None
+    if updates:
+        ref.update(updates)
+
+    d = {**doc.to_dict(), **updates}
     return _deposit_response(d, {d["member_id"]: _member_name(db, d["member_id"])})
 
 

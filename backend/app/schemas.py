@@ -161,6 +161,7 @@ class DailyOrderUpdate(BaseModel):
     total_bill: Optional[int] = None
     note: Optional[str] = None
     status: Optional[str] = None
+    name: Optional[str] = None
 
 
 class DailyOrderLinksUpdate(BaseModel):
@@ -264,6 +265,11 @@ class DepositCreate(BaseModel):
 class ChargeCreate(BaseModel):
     member_id: int
     amount: int = Field(..., ge=1, description="Số tiền bị trừ (nghìn đồng)")
+    note: Optional[str] = None
+
+
+class DepositUpdate(BaseModel):
+    amount: Optional[int] = Field(None, ge=1)
     note: Optional[str] = None
 
 

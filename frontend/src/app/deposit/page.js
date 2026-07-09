@@ -77,6 +77,9 @@ export default function DepositPage() {
   const [detailMember, setDetailMember] = useState(null);
   const [detailData, setDetailData] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [editingTxn, setEditingTxn] = useState(null);
+  const [editAmount, setEditAmount] = useState('');
+  const [editNote, setEditNote] = useState('');
   const addToast = useToast();
 
   const fetchData = useCallback(async () => {
@@ -127,6 +130,22 @@ export default function DepositPage() {
     if (!confirm('Xóa giao dịch này?')) return;
     try { await depositsAPI.delete(id); addToast('Đã xóa'); fetchData(); }
     catch (err) { addToast(err.message, 'error'); }
+  };
+
+  const startEditTxn = (d) => {
+    setEditingTxn(d.id);
+    setEditAmount(d.amount.toString());
+    setEditNote(d.note || '');
+  };
+
+  const handleSaveTxn = async () => {
+    if (!editAmount || parseInt(editAmount) <= 0) { addToast('Nhập số tiền hợp lệ!', 'error'); return; }
+    try {
+      await depositsAPI.update(editingTxn, { amount: parseInt(editAmount), note: editNote });
+      addToast('Đã cập nhật giao dịch');
+      setEditingTxn(null);
+      fetchData();
+    } catch (err) { addToast(err.message, 'error'); }
   };
 
   const fetchHistory = useCallback(async (month, year) => {
@@ -347,13 +366,27 @@ export default function DepositPage() {
                   <td style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>{new Date(d.created_at).toLocaleString('vi-VN')}</td>
                   {admin && <td style={{ fontWeight: '600' }}>{d.member_name}</td>}
                   <td>
-                    {d.type === 'charge'
+                    {editingTxn === d.id ? (
+                      <input type="number" className="form-input" value={editAmount}
+                        onChange={e => setEditAmount(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleSaveTxn()}
+                        style={{ width: 90, padding: '4px 8px' }} autoFocus />
+                    ) : d.type === 'charge'
                       ? <span style={{ color: '#ff6b6b', fontWeight: '700' }}>−{formatMoney(d.amount)}</span>
                       : <span style={{ color: 'var(--status-success)', fontWeight: '700' }}>+{formatMoney(d.amount)}</span>}
                   </td>
                   <td style={{ color: 'var(--text-secondary)' }}>
-                    {d.type === 'charge' && <span style={{ color: '#ff6b6b', fontSize: '0.8rem', marginRight: '4px' }}>📤</span>}
-                    {d.note || '—'}
+                    {editingTxn === d.id ? (
+                      <input type="text" className="form-input" value={editNote}
+                        onChange={e => setEditNote(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleSaveTxn()}
+                        placeholder="Ghi chú" style={{ minWidth: 120, padding: '4px 8px' }} />
+                    ) : (
+                      <>
+                        {d.type === 'charge' && <span style={{ color: '#ff6b6b', fontSize: '0.8rem', marginRight: '4px' }}>📤</span>}
+                        {d.note || '—'}
+                      </>
+                    )}
                   </td>
                   <td>{d.type === 'charge'
                     ? <span className="badge" style={{ background: 'rgba(255,107,107,0.12)', color: '#ff6b6b', border: '1px solid rgba(255,107,107,0.3)' }}>📤 Đã trừ</span>
@@ -362,8 +395,18 @@ export default function DepositPage() {
                   {admin && (
                     <td>
                       <div className="flex gap-8">
-                        {d.status === 'pending' && <button className="btn btn-primary btn-sm" onClick={() => handleApprove(d.id)}>✅ Duyệt</button>}
-                        <button className="btn btn-ghost btn-sm" style={{ color: 'var(--status-finalized)' }} onClick={() => handleDelete(d.id)}>🗑️</button>
+                        {editingTxn === d.id ? (
+                          <>
+                            <button className="btn btn-primary btn-sm" onClick={handleSaveTxn}>💾</button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => setEditingTxn(null)}>✕</button>
+                          </>
+                        ) : (
+                          <>
+                            {d.status === 'pending' && <button className="btn btn-primary btn-sm" onClick={() => handleApprove(d.id)}>✅ Duyệt</button>}
+                            <button className="btn btn-ghost btn-sm" title="Sửa giao dịch" onClick={() => startEditTxn(d)}>✏️</button>
+                            <button className="btn btn-ghost btn-sm" style={{ color: 'var(--status-finalized)' }} onClick={() => handleDelete(d.id)}>🗑️</button>
+                          </>
+                        )}
                       </div>
                     </td>
                   )}

@@ -1,5 +1,7 @@
 # 🍱 Lunch With Me
 
+[![CI](https://github.com/MinZonDev/lunch_with_me/actions/workflows/ci.yml/badge.svg)](https://github.com/MinZonDev/lunch_with_me/actions/workflows/ci.yml)
+
 Hệ thống đặt cơm trưa nội bộ cho nhóm — tự chọn món, chia tiền tự động, theo dõi số dư.
 
 ---
@@ -173,6 +175,33 @@ Tài khoản admin mặc định sau khi chạy `seed.py`:
 | `reviews` | Review món ăn |
 | `password_reset_tokens` | Token đặt lại mật khẩu (hết hạn sau 1 giờ) |
 | `_counters` | Bộ đếm ID tự tăng (transactional) |
+
+---
+
+## CI/CD
+
+GitHub Actions chạy trên mỗi push / pull request vào `main` (`.github/workflows/ci.yml`):
+
+| Job | Nội dung |
+|---|---|
+| `backend-tests` | Python 3.12 · `pip install` · `pytest tests/` |
+| `frontend` | Node 22 · `npm ci` · `eslint` · `next build` |
+| `docker-build` | Build Docker image backend (không push) — xác nhận Dockerfile hợp lệ |
+
+**Auto-deploy backend lên Cloud Run** (`.github/workflows/deploy-backend.yml`): chạy khi push `main`, nhưng **bị skip cho tới khi cấu hình** trên GitHub → Settings → Secrets and variables → Actions:
+
+- Variables: `DEPLOY_CLOUD_RUN=true`, `GCP_PROJECT_ID`, `GCP_REGION` (vd `asia-southeast1`), `CLOUD_RUN_SERVICE` (vd `lunch-backend`)
+- Secrets: `GCP_SA_KEY` — JSON key của service account có quyền *Cloud Run Admin*, *Cloud Build Editor*, *Service Account User*
+
+Frontend deploy qua tích hợp GitHub sẵn có của Vercel (không cần workflow riêng).
+
+### Chạy test local
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+pytest tests/ -v
+```
 
 ---
 

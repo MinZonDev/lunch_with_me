@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from google.cloud.firestore import Query as FsQuery
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
@@ -91,6 +91,10 @@ def _build_order_response(order, items) -> DailyOrderResponse:
         payer_member_id=getattr(order, "payer_member_id", None),
         payer_name=getattr(order, "payer_name", None),
         payer_amount=getattr(order, "payer_amount", 0) or 0,
+        pickup_count=getattr(order, "pickup_count", 1) or 1,
+        pickup_member_ids=getattr(order, "pickup_member_ids", None) or [],
+        pickup_names=getattr(order, "pickup_names", None) or [],
+        pickup_picked_at=getattr(order, "pickup_picked_at", None),
         items=item_responses,
         eater_count=eater_count,
     )
@@ -308,6 +312,7 @@ def create_order(data: DailyOrderCreate, db=Depends(get_db), _=Depends(get_order
         "note": data.note,
         "created_by": data.created_by,
         "created_at": now,
+        "pickup_count": data.pickup_count,
     }
     db.collection("daily_orders").document(doc_id).set(order_data)
 
@@ -438,6 +443,30 @@ def finalize_order(order_id: int, data: DailyOrderFinalize, db=Depends(get_db), 
     order = _to_ns(ref.get().to_dict())
     items = _load_items_with_names(db, order_id)
     return _build_order_response(order, items)
+
+
+@router.post("/{order_id}/pickup", response_model=DailyOrderResponse)
+def reroll_pickup(
+    order_id: int,
+    background: BackgroundTasks,
+    count: int | None = Query(default=None, ge=1, le=10),
+    db=Depends(get_db),
+    _=Depends(get_order_manager),
+):
+    """Random lại người lấy cơm (admin/orderer) và gửi mail cho người đã đặt món."""
+    from app.services import pickup
+
+    ref, order = _get_order_by_id(db, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if count is not None:
+        ref.update({"pickup_count": count})
+    picked = pickup.pick(db, ref, reroll=True)
+    if not picked:
+        raise HTTPException(status_code=400, detail="Chưa có ai đặt món để chọn người lấy cơm")
+    background.add_task(pickup.notify, db, picked)
+    items = _load_items_with_names(db, order_id)
+    return _build_order_response(_to_ns(ref.get().to_dict()), items)
 
 
 @router.put("/{order_id}/links", response_model=DailyOrderResponse)

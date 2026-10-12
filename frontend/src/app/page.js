@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ordersAPI, orderItemsAPI, membersAPI, restaurantsAPI, delegationsAPI, formatMoney, getInitials, getTodayString } from '@/lib/api';
 import { useToast } from '@/components/Toast';
+import PickupBanner from '@/components/PickupBanner';
 import { isAdmin, getUser, canManageOrders } from '@/lib/auth';
 import { useOrderRealtime } from '@/lib/useOrderRealtime';
 import logger from '@/lib/logger';
@@ -35,6 +36,7 @@ export default function HomePage() {
   const [restaurants, setRestaurants] = useState([]);
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
   const [deadlineTime, setDeadlineTime] = useState('11:30');
+  const [pickupCount, setPickupCount] = useState('1');
   const [menuName, setMenuName] = useState('');
   const [allowedMemberIds, setAllowedMemberIds] = useState(new Set());
   const [beMenu, setBeMenu] = useState(null);
@@ -130,6 +132,7 @@ export default function HomePage() {
         name: menuName.trim() || null,
         restaurant_id: selectedRestaurant || null,
         deadline_time: deadlineTime || '11:30',
+        pickup_count: Math.min(Math.max(parseInt(pickupCount) || 1, 1), 10),
       });
       setShowCreateModal(false);
       setSelectedRestaurant(null);
@@ -216,6 +219,13 @@ export default function HomePage() {
           <label className="form-label">Deadline chọn món</label>
           <input type="time" className="form-input" value={deadlineTime} onChange={e => setDeadlineTime(e.target.value)} />
         </div>
+        <div className="form-group">
+          <label className="form-label">Số người lấy cơm</label>
+          <input type="number" min="1" max="10" className="form-input" value={pickupCount} onChange={e => setPickupCount(e.target.value)} />
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '6px 0 0' }}>
+            Hết deadline hệ thống sẽ random trong số người đã đặt món và gửi mail cho mọi người.
+          </p>
+        </div>
         <div className="modal-actions">
           <button className="btn btn-secondary" onClick={() => setShowCreateModal(false)}>Hủy</button>
           <button className="btn btn-primary" onClick={handleCreateOrder} disabled={creating}>
@@ -297,6 +307,9 @@ export default function HomePage() {
 
       {todayOrder && (
         <>
+          <PickupBanner order={todayOrder} manager={manager} currentMemberId={currentUser?.member_id}
+            onChanged={fetchData} addToast={addToast} />
+
           {/* Deadline Banner */}
           {todayOrder.order_deadline && isOpen && (
             <div className={`deadline-banner ${deadlinePassed ? 'expired' : minutesLeft <= 30 ? 'warning' : ''}`}>

@@ -157,6 +157,9 @@ class FakeTransaction:
     def set(self, ref, data):
         ref.set(data)
 
+    def update(self, ref, updates):
+        ref.update(updates)
+
 
 class FakeFirestore:
     def __init__(self):

@@ -263,3 +263,30 @@ def send_withdrawal_result(full_name: str, email: str, amount: int, done: bool, 
     </div>
     """
     _send(email, subject, html)
+
+
+def send_pickup_announcement(email: str, full_name: str, order_date: str, order_name: str | None,
+                             picker_names: list[str], is_picker: bool, frontend_url: str):
+    """Thông báo hôm nay ai đi lấy cơm."""
+    from html import escape
+
+    who = ", ".join(escape(n) for n in picker_names)
+    menu = f" ({escape(order_name)})" if order_name else ""
+    if is_picker:
+        subject = f"🥡 Hôm nay bạn đi lấy cơm{menu} - {order_date}"
+        headline = '<p style="font-size:1.1em">🎯 Bạn đã được chọn <strong style="color:#ff8c42">đi lấy cơm</strong> hôm nay!</p>'
+    else:
+        subject = f"🥡 Người lấy cơm hôm nay{menu} - {order_date}"
+        headline = ""
+    html = f"""
+    <div style="font-family:sans-serif;max-width:520px;margin:auto;background:#1a1a2e;color:#f0f0f5;padding:32px;border-radius:16px">
+      <h2 style="color:#ff8c42;margin:0 0 16px">🍱 Lunch With Me</h2>
+      <p>Xin chào <strong>{escape(full_name)}</strong>,</p>
+      {headline}
+      <p>Người lấy cơm ngày <strong>{order_date}</strong>{menu}: <strong style="color:#ffe66d">{who}</strong></p>
+      <a href="{frontend_url}" style="display:inline-block;background:#ff8c42;color:#fff;padding:11px 24px;border-radius:8px;text-decoration:none;font-weight:700">
+        Xem order →
+      </a>
+    </div>
+    """
+    _send(email, subject, html)

@@ -155,6 +155,7 @@ class DailyOrderCreate(BaseModel):
     deadline_time: Optional[str] = None  # "HH:MM" VN time, default from config
     note: Optional[str] = None
     created_by: Optional[int] = None
+    pickup_count: int = Field(default=1, ge=1, le=10)  # số người lấy cơm random khi hết deadline
 
 
 class DailyOrderUpdate(BaseModel):
@@ -210,6 +211,10 @@ class DailyOrderResponse(BaseModel):
     payer_member_id: Optional[int] = None
     payer_name: Optional[str] = None
     payer_amount: int = 0
+    pickup_count: int = 1
+    pickup_member_ids: list[int] = []
+    pickup_names: list[str] = []
+    pickup_picked_at: Optional[datetime] = None
     items: list[OrderItemInOrder] = []
     eater_count: int = 0
 

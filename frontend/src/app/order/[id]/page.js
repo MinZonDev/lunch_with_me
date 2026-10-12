@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, use } from 'react';
 import { ordersAPI, orderItemsAPI, membersAPI, formatMoney, getInitials, formatDate, previewSplit } from '@/lib/api';
 import { isAdmin, getUser, canManageOrders } from '@/lib/auth';
 import { useToast } from '@/components/Toast';
+import PickupBanner from '@/components/PickupBanner';
 import { useOrderRealtime } from '@/lib/useOrderRealtime';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -372,6 +373,9 @@ export default function OrderDetailPage({ params }) {
           )}
         </div>
       </div>
+
+      <PickupBanner order={order} manager={manager} currentMemberId={currentUser?.member_id}
+        onChanged={fetchOrder} addToast={addToast} />
 
       {/* Stats */}
       <div className="stats-grid">

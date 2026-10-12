@@ -76,6 +76,16 @@ def _job_auto_lock_past_deadline():
         print(f"[Scheduler] Auto-locked {locked} expired orders")
 
 
+def _job_pickup():
+    from app.database import init_db, get_db
+    from app.services.pickup import run_due
+
+    init_db()
+    picked = run_due(get_db())
+    if picked:
+        print(f"[Scheduler] Picked food collectors for {picked} order(s)")
+
+
 def _job_monthly_statement():
     from app.database import init_db, get_db
     from app.services.email_service import send_monthly_statement
@@ -210,6 +220,9 @@ def reschedule_debt_reminder(cfg):
 def start_scheduler():
     _scheduler.add_job(_job_auto_lock_past_deadline, CronTrigger(hour=12, minute=5, timezone=VN_TZ), id="auto_lock")
     _scheduler.add_job(_job_monthly_statement, CronTrigger(day=1, hour=8, timezone=VN_TZ), id="monthly_statement")
+    # Random người lấy cơm right after each order's deadline (cheap: reads today's orders only)
+    _scheduler.add_job(_job_pickup, CronTrigger(hour="6-22", minute="*", timezone=VN_TZ),
+                       id="pickup", max_instances=1, coalesce=True)
 
     # Load debt reminder settings from Firestore on startup
     try:

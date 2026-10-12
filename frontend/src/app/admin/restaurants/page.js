@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { restaurantsAPI } from '@/lib/api';
 import { useToast } from '@/components/Toast';
+import { MenuImagesManager } from '@/components/MenuGallery';
 
 export default function RestaurantsPage() {
   const [restaurants, setRestaurants] = useState([]);
@@ -15,6 +16,7 @@ export default function RestaurantsPage() {
   const [beLat, setBeLat] = useState('');
   const [beLon, setBeLon] = useState('');
   const [saving, setSaving] = useState(false);
+  const [imagesFor, setImagesFor] = useState(null);
   const addToast = useToast();
 
   const load = async () => {
@@ -96,6 +98,7 @@ export default function RestaurantsPage() {
               <tr>
                 <th>Tên quán</th>
                 <th>Link menu</th>
+                <th>Ảnh menu</th>
                 <th>Be Menu</th>
                 <th style={{ width: 120 }}></th>
               </tr>
@@ -108,6 +111,11 @@ export default function RestaurantsPage() {
                     {r.link
                       ? <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', fontSize: '0.85rem' }}>🔗 Xem link</a>
                       : <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>—</span>}
+                  </td>
+                  <td>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setImagesFor(r)}>
+                      🖼️ {r.menu_images?.length ? `${r.menu_images.length} ảnh` : 'Thêm ảnh'}
+                    </button>
                   </td>
                   <td>
                     {r.be_restaurant_id
@@ -125,6 +133,15 @@ export default function RestaurantsPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {imagesFor && (
+        <MenuImagesManager
+          restaurant={imagesFor}
+          onClose={() => setImagesFor(null)}
+          onChanged={load}
+          addToast={addToast}
+        />
       )}
 
       {showForm && (

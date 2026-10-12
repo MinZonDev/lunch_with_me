@@ -20,6 +20,9 @@ class Settings:
     smtp_user: str = os.getenv("SMTP_USER", "")
     smtp_password: str = os.getenv("SMTP_PASSWORD", "")
 
+    # Firebase Storage bucket for menu images, e.g. "my-project.appspot.com"
+    storage_bucket: str = os.getenv("FIREBASE_STORAGE_BUCKET", "")
+
     # Microsoft Teams group notification
     teams_webhook_url: str = os.getenv("TEAMS_WEBHOOK_URL", "")
 

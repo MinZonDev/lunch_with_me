@@ -5,6 +5,7 @@ import { ordersAPI, orderItemsAPI, membersAPI, formatMoney, getInitials, formatD
 import { isAdmin, getUser, canManageOrders } from '@/lib/auth';
 import { useToast } from '@/components/Toast';
 import PickupBanner from '@/components/PickupBanner';
+import { MenuGallery } from '@/components/MenuGallery';
 import { useOrderRealtime } from '@/lib/useOrderRealtime';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -460,6 +461,8 @@ export default function OrderDetailPage({ params }) {
           </p>
         )}
       </div>
+
+      <MenuGallery images={order.menu_images} title={`🖼️ Menu ${order.restaurant_name || ''}`} />
 
       {/* Eaters — grouped by dish */}
       {eatingItems.length > 0 && (() => {

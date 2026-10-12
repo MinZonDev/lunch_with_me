@@ -33,6 +33,25 @@ async function fetchAPI(endpoint, options = {}) {
   return response.json();
 }
 
+// Multipart upload: let the browser set the multipart boundary header
+async function uploadAPI(endpoint, formData) {
+  const token = getToken();
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearAuth();
+      if (typeof window !== 'undefined') window.location.href = '/login';
+    }
+    const error = await response.json().catch(() => ({ detail: 'An error occurred' }));
+    throw new Error(error.detail || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
 // ============== Auth ==============
 export const authAPI = {
   sendOtp: (email) => fetchAPI('/api/auth/send-otp', { method: 'POST', body: JSON.stringify({ email }) }),
@@ -132,6 +151,12 @@ export const restaurantsAPI = {
   update: (id, data) => fetchAPI(`/api/restaurants/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id) => fetchAPI(`/api/restaurants/${id}`, { method: 'DELETE' }),
   beMenu: (restaurantId) => fetchAPI(`/api/be/menu/${restaurantId}`),
+  uploadMenuImages: (id, files) => {
+    const fd = new FormData();
+    files.forEach(f => fd.append('files', f));
+    return uploadAPI(`/api/restaurants/${id}/menu-images`, fd);
+  },
+  deleteMenuImage: (id, path) => fetchAPI(`/api/restaurants/${id}/menu-images?path=${encodeURIComponent(path)}`, { method: 'DELETE' }),
 };
 
 // ============== Reminders ==============

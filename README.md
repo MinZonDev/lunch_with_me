@@ -13,16 +13,25 @@ Hệ thống đặt cơm trưa nội bộ cho nhóm — tự chọn món, chia t
 - Chọn món hàng ngày (thường hoặc chay) trước deadline
 - Xem danh sách ai đã chọn, ai chưa chọn
 - Yêu cầu nạp tiền — chờ admin duyệt
-- Xem số dư, lịch sử nạp và chi tiêu của bản thân
+- Yêu cầu rút tiền (một phần hoặc toàn bộ số dư) về tài khoản ngân hàng — admin chuyển khoản qua VietQR rồi xác nhận
+- Xem số dư, lịch sử nạp, rút và chi tiêu của bản thân
+- Xem ảnh menu của quán ngay trên trang chọn món
+- Nhận email ai là người lấy cơm hôm nay (random tự động khi hết deadline)
+
+**Cho người đặt cơm (role `orderer`)**
+- Tạo menu, khoá order, chốt bill, đánh dấu ngoại lệ, random lại người lấy cơm
+- Khi chốt bill, người trả tiền quán được cộng tiền vào deposit ("Đặt cơm ngày dd-mm-yyyy")
 
 **Cho admin**
 - Tạo order hàng ngày, chọn quán ăn, thiết lập deadline
 - Quản lý danh sách link đặt món (nhiều link mỗi ngày — ví dụ 1 link quán thường, 1 link quán chay)
 - Khoá / mở lại order
 - Chốt bill và chia tiền tự động cho từng người
+- Đánh dấu ngoại lệ: người đặt món giá riêng (VD cơm trắng 3k) trả đúng giá đó, phần còn lại chia đều
+- Duyệt / từ chối yêu cầu rút tiền
 - Duyệt yêu cầu nạp tiền của thành viên
 - Thêm khoản chi ngoài (trừ thẳng vào số dư)
-- Quản lý danh sách quán ăn (tên + link menu)
+- Quản lý danh sách quán ăn (tên + link menu + ảnh menu)
 - Xem báo cáo tổng hợp theo tháng
 - Import lịch sử qua file Excel
 - Nhắc nhở tự động qua email (chưa chọn món, sắp hết deadline, số dư thấp)
@@ -237,3 +246,11 @@ npm run build
 - Đổi `JWT_SECRET` thành chuỗi random dài trước khi deploy production
 - Đổi mật khẩu `admin` ngay sau khi chạy seed
 - Gmail App Password chỉ dùng cho ứng dụng này, có thể thu hồi bất cứ lúc nào
+
+---
+
+## Cấu hình bổ sung
+
+- **Ảnh menu**: bật Firebase Storage và đặt `FIREBASE_STORAGE_BUCKET` (VD `your-project.appspot.com`) cho backend. Service account của backend cần quyền ghi bucket.
+- **Firestore index**: danh sách order phân trang cần composite index trong `firestore.indexes.json`. Deploy bằng `firebase deploy --only firestore:indexes` (hoặc bấm link tạo index trong log lỗi đầu tiên).
+- **Random người lấy cơm** chạy bằng APScheduler mỗi phút (06:00–22:00) nên Cloud Run cần `min-instances >= 1`.

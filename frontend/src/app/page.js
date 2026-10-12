@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { ordersAPI, orderItemsAPI, membersAPI, restaurantsAPI, delegationsAPI, formatMoney, getInitials, getTodayString } from '@/lib/api';
 import { useToast } from '@/components/Toast';
 import PickupBanner from '@/components/PickupBanner';
+import { MenuGallery } from '@/components/MenuGallery';
 import { isAdmin, getUser, canManageOrders } from '@/lib/auth';
 import { useOrderRealtime } from '@/lib/useOrderRealtime';
 import logger from '@/lib/logger';
@@ -368,6 +369,8 @@ export default function HomePage() {
               </div>
             </div>
           )}
+
+          <MenuGallery images={todayOrder.menu_images} title={`🖼️ Menu ${todayOrder.restaurant_name || ''}`} />
 
           <div className="grid-2">
             {/* Order Form */}

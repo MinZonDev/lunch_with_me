@@ -257,12 +257,27 @@ def order_stats(db=Depends(get_db), _=Depends(get_current_user)):
     return DailyOrderStats(total_orders=total, finalized_count=finalized, total_spent=spent)
 
 
+def _with_menu_images(db, responses: list[DailyOrderResponse]) -> list[DailyOrderResponse]:
+    """Attach each order's restaurant menu photos (one batch read for all orders)."""
+    rids = {r.restaurant_id for r in responses if r.restaurant_id}
+    if not rids:
+        return responses
+    refs = [db.collection("restaurants").document(str(rid)) for rid in rids]
+    images = {
+        int(s.id): s.to_dict().get("menu_images") or []
+        for s in db.get_all(refs, field_paths=["menu_images"]) if s.exists
+    }
+    for r in responses:
+        r.menu_images = images.get(r.restaurant_id, [])
+    return responses
+
+
 @router.get("/today", response_model=list[DailyOrderResponse])
 def get_today_order(db=Depends(get_db), _=Depends(get_current_user)):
     today_str = str(datetime.now(VN_TZ).date())
     snaps = db.collection("daily_orders").where("order_date", "==", today_str).stream()
     orders = sorted([_to_ns(s.to_dict()) for s in snaps], key=lambda o: o.created_at)
-    return [_build_order_response(o, _load_items_with_names(db, o.id)) for o in orders]
+    return _with_menu_images(db, [_build_order_response(o, _load_items_with_names(db, o.id)) for o in orders])
 
 
 @router.get("/{order_id}", response_model=DailyOrderResponse)
@@ -271,7 +286,7 @@ def get_order(order_id: int, db=Depends(get_db), _=Depends(get_current_user)):
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     items = _load_items_with_names(db, order_id)
-    return _build_order_response(order, items)
+    return _with_menu_images(db, [_build_order_response(order, items)])[0]
 
 
 @router.post("", response_model=DailyOrderResponse, status_code=201)

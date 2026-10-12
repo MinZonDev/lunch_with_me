@@ -129,6 +129,11 @@ class RestaurantUpdate(BaseModel):
     be_lon: Optional[float] = None
 
 
+class MenuImage(BaseModel):
+    url: str
+    path: str
+
+
 class RestaurantResponse(BaseModel):
     id: int
     name: str
@@ -137,6 +142,7 @@ class RestaurantResponse(BaseModel):
     be_restaurant_id: Optional[str] = None
     be_lat: Optional[float] = None
     be_lon: Optional[float] = None
+    menu_images: list[MenuImage] = []
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -215,6 +221,7 @@ class DailyOrderResponse(BaseModel):
     pickup_member_ids: list[int] = []
     pickup_names: list[str] = []
     pickup_picked_at: Optional[datetime] = None
+    menu_images: list[MenuImage] = []  # from the order's restaurant
     items: list[OrderItemInOrder] = []
     eater_count: int = 0
 

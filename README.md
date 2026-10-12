@@ -253,4 +253,4 @@ npm run build
 
 - **Ảnh menu**: bật Firebase Storage và đặt `FIREBASE_STORAGE_BUCKET` (VD `your-project.appspot.com`) cho backend. Service account của backend cần quyền ghi bucket.
 - **Firestore index**: danh sách order phân trang cần composite index trong `firestore.indexes.json`. Deploy bằng `firebase deploy --only firestore:indexes` (hoặc bấm link tạo index trong log lỗi đầu tiên).
-- **Random người lấy cơm** chạy bằng APScheduler mỗi phút (06:00–22:00) nên Cloud Run cần `min-instances >= 1`.
+- **Job theo lịch** (random người lấy cơm, auto-lock 12:05, sao kê ngày 1, nhắc nợ): trên Cloud Run, Cloud Scheduler job `lunch-cron-tick` gọi `POST /api/internal/cron/tick` mỗi phút với header `X-Cron-Secret` (= env `CRON_SECRET`); service đặt `ENABLE_SCHEDULER=false`. Mỗi job chỉ chạy một lần mỗi kỳ (đánh dấu trong collection `_cron`). Chạy local/VPS thì APScheduler tự gọi cùng tick đó mỗi phút.

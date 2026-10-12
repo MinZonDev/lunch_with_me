@@ -9,6 +9,7 @@ from app.schemas import (
 )
 from app.core.auth import get_current_user, get_current_admin
 from app.services.delegation import has_active_delegation
+from app.services.ledger import member_names
 
 logger = logging.getLogger("lwm.order_items")
 
@@ -73,15 +74,9 @@ def list_items(order_id: int, db=Depends(get_db), _=Depends(get_current_user)):
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    members_cache: dict[int, str] = {}
-    result = []
-    for snap in db.collection("order_items").where("daily_order_id", "==", order_id).stream():
-        d = snap.to_dict()
-        mid = d["member_id"]
-        if mid not in members_cache:
-            members_cache[mid] = _get_member_name(db, mid)
-        result.append(_item_response(SimpleNamespace(**d), members_cache[mid]))
-    return result
+    docs = [s.to_dict() for s in db.collection("order_items").where("daily_order_id", "==", order_id).stream()]
+    names = member_names(db, {d["member_id"] for d in docs})
+    return [_item_response(SimpleNamespace(**d), names.get(d["member_id"], "?")) for d in docs]
 
 
 @router.post("", response_model=OrderItemResponse, status_code=201)

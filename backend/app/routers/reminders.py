@@ -29,12 +29,9 @@ class SendReminderRequest(BaseModel):
 
 def _compute_balances(db):
     """Return list of {member_id, name, email, balance} for all active users with member link."""
-    all_txns = [s.to_dict() for s in db.collection("deposits").stream()]
-    all_items = [s.to_dict() for s in db.collection("order_items").where("is_eating", "==", True).stream()]
-    finalized_ids = {
-        s.to_dict()["id"]
-        for s in db.collection("daily_orders").where("status", "==", "finalized").stream()
-    }
+    from app.services.ledger import compute_balances
+
+    balances = compute_balances(db)
     users = [s.to_dict() for s in db.collection("users").where("is_active", "==", True).stream()]
 
     result = []
@@ -42,10 +39,6 @@ def _compute_balances(db):
         mid = u.get("member_id")
         if not mid:
             continue
-        my_txns = [t for t in all_txns if t["member_id"] == mid]
-        deposited = sum(t["amount"] for t in my_txns if t.get("type", "deposit") == "deposit" and t.get("status") == "approved")
-        charged = sum(t["amount"] for t in my_txns if t.get("type") == "charge")
-        spent = sum(i.get("total_cost", 0) or 0 for i in all_items if i["member_id"] == mid and i["daily_order_id"] in finalized_ids)
         result.append({
             "member_id": mid,
             "user_id": u["id"],
@@ -53,7 +46,7 @@ def _compute_balances(db):
             "full_name": u["full_name"],
             "username": u.get("username", ""),
             "email": u.get("email", ""),
-            "balance": deposited - charged - spent,
+            "balance": balances[mid]["balance"] if mid in balances else 0,
         })
     return result
 

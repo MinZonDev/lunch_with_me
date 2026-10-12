@@ -72,9 +72,11 @@ export const ordersAPI = {
     if (params.start_date) searchParams.set('start_date', params.start_date);
     if (params.end_date) searchParams.set('end_date', params.end_date);
     if (params.limit) searchParams.set('limit', params.limit);
+    if (params.cursor) searchParams.set('cursor', params.cursor);
     const qs = searchParams.toString();
-    return fetchAPI(`/api/orders${qs ? '?' + qs : ''}`);
+    return fetchAPI(`/api/orders${qs ? '?' + qs : ''}`); // → { items, next_cursor }
   },
+  stats: () => fetchAPI('/api/orders/stats'),
   getToday: () => fetchAPI('/api/orders/today'),
   get: (id) => fetchAPI(`/api/orders/${id}`),
   create: (data) => fetchAPI('/api/orders', { method: 'POST', body: JSON.stringify(data) }),
@@ -99,7 +101,10 @@ export const orderItemsAPI = {
 // ============== Deposits ==============
 export const depositsAPI = {
   summary: () => fetchAPI('/api/deposits/summary'),
-  list: () => fetchAPI('/api/deposits'),
+  list: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null)).toString();
+    return fetchAPI(`/api/deposits${qs ? '?' + qs : ''}`);
+  },
   spending: () => fetchAPI('/api/deposits/spending'),
   memberDetail: (memberId) => fetchAPI(`/api/deposits/member/${memberId}`),
   create: (data) => fetchAPI('/api/deposits', { method: 'POST', body: JSON.stringify(data) }),

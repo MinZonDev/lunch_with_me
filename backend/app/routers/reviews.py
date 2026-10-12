@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from app.database import get_db, _next_id
 from app.schemas import ReviewCreate, ReviewResponse
 from app.core.auth import get_current_user, get_current_admin
+from app.services.ledger import member_names
 
 router = APIRouter(prefix="/api/reviews", tags=["reviews"])
 
@@ -13,17 +14,14 @@ def list_reviews(db=Depends(get_db), _=Depends(get_current_user)):
     reviews = [s.to_dict() for s in db.collection("reviews").stream()]
     reviews.sort(key=lambda r: r["created_at"], reverse=True)
 
-    member_names: dict[int, str] = {}
+    names = member_names(db, {r.get("member_id") for r in reviews})
     result = []
     for r in reviews:
         mid = r.get("member_id")
-        if mid and mid not in member_names:
-            m_doc = db.collection("members").document(str(mid)).get()
-            member_names[mid] = m_doc.to_dict().get("name") if m_doc.exists else None
         result.append(ReviewResponse(
             id=r["id"],
             member_id=mid,
-            member_name=member_names.get(mid) if mid else None,
+            member_name=names.get(mid) if mid else None,
             dish_name=r["dish_name"],
             rating=r.get("rating"),
             comment=r.get("comment"),

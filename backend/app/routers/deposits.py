@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from datetime import datetime, timezone
 import calendar
 
 from app.database import get_db, _next_id, _to_ns
 from app.schemas import DepositCreate, ChargeCreate, DepositUpdate, DepositResponse, MemberBalanceResponse, DepositHistoryResponse, MemberDailyCost, SpendingItemResponse, MemberDetailResponse, MemberTransactionItem
 from app.core.auth import get_current_user, get_current_admin
+from app.services.ledger import compute_balances, empty_balance, member_names, orders_by_ids, signed_delta
 
 router = APIRouter(prefix="/api/deposits", tags=["deposits"])
 
@@ -48,41 +49,37 @@ def get_deposit_summary(db=Depends(get_db), current_user=Depends(get_current_use
         members = [doc.to_dict()] if doc.exists else []
         user_map = {}
 
-    all_txns = [s.to_dict() for s in db.collection("deposits").stream()]
-    all_items = [s.to_dict() for s in db.collection("order_items").where("is_eating", "==", True).stream()]
-    finalized_ids = {
-        s.to_dict()["id"]
-        for s in db.collection("daily_orders").where("status", "==", "finalized").stream()
-    }
+    balances = compute_balances(db, None if is_admin else members[0]["id"]) if members else {}
 
     result = []
     for m in members:
         mid = m["id"]
-        my_txns = [t for t in all_txns if t["member_id"] == mid]
-        total_deposited = sum(t["amount"] for t in my_txns if t.get("type", "deposit") == "deposit" and t.get("status") == "approved")
-        total_charged = sum(t["amount"] for t in my_txns if t.get("type") == "charge")
-        total_spent = sum(
-            i["total_cost"] for i in all_items
-            if i["member_id"] == mid and i["daily_order_id"] in finalized_ids
-        )
+        b = balances.get(mid) or empty_balance()
         u = user_map.get(mid)
         result.append(MemberBalanceResponse(
             id=mid,
             name=m["name"],
             username=u.get("username") if u else None,
             email=u.get("email") if u else None,
-            total_deposited=total_deposited,
-            total_charged=total_charged,
-            total_spent=total_spent,
-            balance=total_deposited - total_charged - total_spent,
+            total_deposited=b["deposited"],
+            total_charged=b["charged"],
+            total_spent=b["spent"],
+            balance=b["balance"],
         ))
     return result
 
 
 @router.get("", response_model=list[DepositResponse])
-def list_deposits(db=Depends(get_db), current_user=Depends(get_current_user)):
+def list_deposits(
+    status: str | None = Query(default=None, description="Lọc theo trạng thái, VD: pending"),
+    limit: int | None = Query(default=None, ge=1, le=500),
+    db=Depends(get_db),
+    current_user=Depends(get_current_user),
+):
     is_admin = getattr(current_user, "role", "user") == "admin"
     col = db.collection("deposits")
+    if status:
+        col = col.where("status", "==", status)
 
     if is_admin:
         stream = col.stream()
@@ -94,14 +91,11 @@ def list_deposits(db=Depends(get_db), current_user=Depends(get_current_user)):
 
     deposits = [s.to_dict() for s in stream]
     deposits.sort(key=lambda d: d["created_at"], reverse=True)
+    if limit:
+        deposits = deposits[:limit]
 
-    member_names: dict[int, str] = {}
-    for d in deposits:
-        mid = d["member_id"]
-        if mid not in member_names:
-            member_names[mid] = _member_name(db, mid)
-
-    return [_deposit_response(d, member_names) for d in deposits]
+    names = member_names(db, {d["member_id"] for d in deposits})
+    return [_deposit_response(d, names) for d in deposits]
 
 
 @router.post("", response_model=DepositResponse, status_code=201)
@@ -225,11 +219,6 @@ def get_spending(db=Depends(get_db), current_user=Depends(get_current_user)):
     if not mid:
         return []
 
-    finalized_map = {
-        s.to_dict()["id"]: s.to_dict()
-        for s in db.collection("daily_orders").where("status", "==", "finalized").stream()
-    }
-
     items = [
         s.to_dict() for s in
         db.collection("order_items")
@@ -237,6 +226,7 @@ def get_spending(db=Depends(get_db), current_user=Depends(get_current_user)):
         .where("is_eating", "==", True)
         .stream()
     ]
+    finalized_map = orders_by_ids(db, {i["daily_order_id"] for i in items}, finalized_only=True)
 
     result = []
     for item in items:
@@ -280,10 +270,6 @@ def get_member_detail(member_id: int, db=Depends(get_db), current_user=Depends(g
     dep_docs.sort(key=lambda d: d["created_at"])
 
     # All spending (finalized order items)
-    finalized_map = {
-        s.to_dict()["id"]: s.to_dict()
-        for s in db.collection("daily_orders").where("status", "==", "finalized").stream()
-    }
     spending_items = [
         s.to_dict() for s in
         db.collection("order_items")
@@ -291,17 +277,13 @@ def get_member_detail(member_id: int, db=Depends(get_db), current_user=Depends(g
         .where("is_eating", "==", True)
         .stream()
     ]
+    finalized_map = orders_by_ids(db, {i["daily_order_id"] for i in spending_items}, finalized_only=True)
 
-    total_deposited = sum(d["amount"] for d in dep_docs if d.get("type", "deposit") == "deposit" and d.get("status") == "approved")
-    total_charged = sum(d["amount"] for d in dep_docs if d.get("type") == "charge")
-    total_spent = sum(
-        i.get("total_cost", 0) or 0 for i in spending_items
-        if i["daily_order_id"] in finalized_map
-    )
-    balance = total_deposited - total_charged - total_spent
+    b = compute_balances(db, member_id).get(member_id) or empty_balance()
 
-    # Build unified transaction list
+    # Build unified transaction list; deltas[i] is how txns[i] moves the balance
     txns: list[MemberTransactionItem] = []
+    deltas: list[int] = []
 
     for d in dep_docs:
         txn_type = d.get("type", "deposit")
@@ -312,6 +294,7 @@ def get_member_detail(member_id: int, db=Depends(get_db), current_user=Depends(g
             description=d.get("note"),
             status=d.get("status", "approved"),
         ))
+        deltas.append(signed_delta(d))
 
     for item in spending_items:
         order = finalized_map.get(item["daily_order_id"])
@@ -332,27 +315,23 @@ def get_member_detail(member_id: int, db=Depends(get_db), current_user=Depends(g
             order_date=order_date,
             daily_order_id=item["daily_order_id"],
         ))
+        deltas.append(-(item.get("total_cost", 0) or 0))
 
-    # Sort by date descending, compute running balance from oldest to newest
-    txns.sort(key=lambda t: t.date)
+    # Compute running balance from oldest to newest, then show newest first
+    ordered = sorted(zip(txns, deltas), key=lambda p: p[0].date)
     running = 0
-    for t in txns:
-        if t.type == "deposit" and t.status == "approved":
-            running += t.amount
-        elif t.type == "charge":
-            running -= t.amount
-        elif t.type == "spending":
-            running -= t.amount
+    for t, delta in ordered:
+        running += delta
         t.running_balance = running
-    txns.reverse()
+    txns = [t for t, _ in reversed(ordered)]
 
     return MemberDetailResponse(
         member_id=member_id,
         member_name=member_name,
-        total_deposited=total_deposited,
-        total_charged=total_charged,
-        total_spent=total_spent,
-        balance=balance,
+        total_deposited=b["deposited"],
+        total_charged=b["charged"],
+        total_spent=b["spent"],
+        balance=b["balance"],
         transactions=txns,
     )
 
@@ -366,11 +345,12 @@ def get_deposit_history(month: int, year: int, db=Depends(get_db), current_user=
     start = str(date(year, month, 1))
     end = str(date(year, month, last_day))
 
-    all_orders = [
+    month_orders = [
         s.to_dict() for s in
-        db.collection("daily_orders").where("status", "==", "finalized").stream()
+        db.collection("daily_orders")
+        .where("order_date", ">=", start).where("order_date", "<=", end).stream()
     ]
-    month_orders = [o for o in all_orders if start <= o["order_date"] <= end]
+    month_orders = [o for o in month_orders if o.get("status") == "finalized"]
     month_orders.sort(key=lambda o: o["order_date"])
     order_ids = {o["id"] for o in month_orders}
     dates = [o["order_date"] for o in month_orders]
@@ -393,8 +373,14 @@ def get_deposit_history(month: int, year: int, db=Depends(get_db), current_user=
             members=[MemberDailyCost(member_id=m["id"], member_name=m["name"], daily_costs={}, total_spent=0) for m in active_members],
         )
 
-    all_items = [s.to_dict() for s in db.collection("order_items").where("is_eating", "==", True).stream()]
-    items = [i for i in all_items if i["daily_order_id"] in order_ids]
+    month_items = (
+        db.collection("order_items")
+        .where("order_date", ">=", start).where("order_date", "<=", end)
+        .select(["member_id", "daily_order_id", "is_eating", "total_cost"])
+        .stream()
+    )
+    items = [d for d in (s.to_dict() for s in month_items)
+             if d.get("is_eating") and d["daily_order_id"] in order_ids]
     order_date_map = {o["id"]: o["order_date"] for o in month_orders}
 
     matrix: dict[int, dict] = {}

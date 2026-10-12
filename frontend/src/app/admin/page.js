@@ -22,13 +22,13 @@ export default function AdminPage() {
         membersAPI.list(false),
         ordersAPI.getToday().catch(() => []),
         depositsAPI.summary().catch(() => []),
-        depositsAPI.list().catch(() => []),
-        ordersAPI.list({ limit: 14 }).catch(() => []),
+        depositsAPI.list({ status: 'pending' }).catch(() => []),
+        ordersAPI.list({ limit: 14 }).then(r => r.items).catch(() => []),
       ]);
       setMembers(membersList);
       setTodayOrders(Array.isArray(today) ? today : (today ? [today] : []));
       setSummary(summaryData);
-      setPendingCount(depositsList.filter(d => d.status === 'pending').length);
+      setPendingCount(depositsList.length);
       setRecentOrders(ordersList);
     } catch (err) {
       console.error(err);

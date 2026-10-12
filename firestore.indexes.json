@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "daily_orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "order_date", "order": "DESCENDING" },
+        { "fieldPath": "id", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

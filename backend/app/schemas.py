@@ -222,6 +222,17 @@ class DailyOrderListResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class DailyOrderPage(BaseModel):
+    items: list[DailyOrderListResponse]
+    next_cursor: Optional[str] = None  # None = hết trang
+
+
+class DailyOrderStats(BaseModel):
+    total_orders: int
+    finalized_count: int
+    total_spent: int
+
+
 # ============== Order Item Schemas ==============
 
 class OrderItemCreate(BaseModel):

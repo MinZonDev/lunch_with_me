@@ -16,44 +16,41 @@ def generate_report(db, start: date, end: date, period_label: str) -> dict:
     """Build report data between two dates (inclusive)."""
     start_str, end_str = str(start), str(end)
 
-    all_orders = [s.to_dict() for s in db.collection("daily_orders").where("status", "==", "finalized").stream()]
-    orders = [o for o in all_orders if start_str <= o["order_date"] <= end_str]
+    from app.services.ledger import member_names
+
+    orders = [s.to_dict() for s in db.collection("daily_orders")
+              .where("order_date", ">=", start_str).where("order_date", "<=", end_str).stream()]
+    orders = [o for o in orders if o.get("status") == "finalized"]
     orders.sort(key=lambda o: o["order_date"])
     order_ids = {o["id"] for o in orders}
 
     if not order_ids:
         return {"period_label": period_label, "days": [], "members": [], "grand_total": 0}
 
-    all_items = [s.to_dict() for s in db.collection("order_items").where("is_eating", "==", True).stream()]
-    items = [i for i in all_items if i["daily_order_id"] in order_ids]
-
-    # Member name cache
-    member_names: dict[int, str] = {}
-    for item in items:
-        mid = item["member_id"]
-        if mid not in member_names:
-            m_doc = db.collection("members").document(str(mid)).get()
-            member_names[mid] = m_doc.to_dict().get("name", "?") if m_doc.exists else "?"
+    # order_items carry order_date, so one range query covers the period
+    period_items = [s.to_dict() for s in db.collection("order_items")
+                    .where("order_date", ">=", start_str).where("order_date", "<=", end_str).stream()]
+    items = [i for i in period_items if i.get("is_eating") and i["daily_order_id"] in order_ids]
+    names = member_names(db, {i["member_id"] for i in items})
 
     # Per member aggregates
     member_data: dict[int, dict] = {}
     for item in items:
         mid = item["member_id"]
         if mid not in member_data:
-            member_data[mid] = {"member_id": mid, "member_name": member_names[mid], "days_eaten": 0, "total_cost": 0}
+            member_data[mid] = {"member_id": mid, "member_name": names[mid], "days_eaten": 0, "total_cost": 0}
         member_data[mid]["days_eaten"] += 1
         member_data[mid]["total_cost"] += item.get("total_cost", 0) or 0
 
     # Per day summary
     order_id_to_items = {}
-    for item in [s.to_dict() for s in db.collection("order_items").stream()]:
-        oid = item["daily_order_id"]
-        order_id_to_items.setdefault(oid, []).append(item)
+    for item in items:
+        order_id_to_items.setdefault(item["daily_order_id"], []).append(item)
 
     days = []
     grand_total = 0
     for o in orders:
-        eaters = sum(1 for i in order_id_to_items.get(o["id"], []) if i.get("is_eating"))
+        eaters = len(order_id_to_items.get(o["id"], []))
         bill = o.get("total_bill") or 0
         grand_total += bill
         days.append({

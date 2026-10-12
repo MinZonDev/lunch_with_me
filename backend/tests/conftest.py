@@ -81,28 +81,52 @@ class FakeDocRef:
 
 
 class FakeQuery:
-    def __init__(self, db, col_name, filters=(), limit=None):
+    def __init__(self, db, col_name, filters=(), limit=None, orders=(), cursor=None):
         self._db = db
         self._col_name = col_name
         self._filters = filters
         self._limit = limit
+        self._orders = orders
+        self._cursor = cursor
+
+    def _copy(self, **kw):
+        state = dict(filters=self._filters, limit=self._limit, orders=self._orders, cursor=self._cursor)
+        state.update(kw)
+        return FakeQuery(self._db, self._col_name, **state)
 
     def where(self, field, op, value):
-        return FakeQuery(self._db, self._col_name, (*self._filters, (field, op, value)), self._limit)
+        return self._copy(filters=(*self._filters, (field, op, value)))
 
     def limit(self, n):
-        return FakeQuery(self._db, self._col_name, self._filters, n)
+        return self._copy(limit=n)
+
+    def select(self, _fields):
+        return self  # projection only trims payload; tests see full docs
+
+    def order_by(self, field, direction="ASCENDING"):
+        return self._copy(orders=(*self._orders, (field, direction == "DESCENDING")))
+
+    def start_after(self, values):
+        return self._copy(cursor=values)
+
+    def _sort_key(self, data):
+        return tuple(data.get(f) for f, _ in self._orders)
 
     def stream(self):
         docs = self._db._data.get(self._col_name, {})
-        out = []
-        for doc_id, data in list(docs.items()):
-            if all(_OPS[op](data.get(f), v) for f, op, v in self._filters):
-                ref = FakeDocRef(self._db, self._col_name, doc_id)
-                out.append(FakeSnapshot(ref, dict(data)))
-            if self._limit is not None and len(out) >= self._limit:
-                break
-        return iter(out)
+        rows = [(doc_id, data) for doc_id, data in list(docs.items())
+                if all(_OPS[op](data.get(f), v) for f, op, v in self._filters)]
+        # Stable multi-key sort, applied from the last key to the first
+        for field, desc in reversed(self._orders):
+            rows.sort(key=lambda r: r[1].get(field), reverse=desc)
+        if self._cursor is not None:
+            cur = tuple(self._cursor[f] for f, _ in self._orders)
+            desc = self._orders[0][1]
+            rows = [r for r in rows if (self._sort_key(r[1]) < cur if desc else self._sort_key(r[1]) > cur)]
+        if self._limit is not None:
+            rows = rows[:self._limit]
+        return iter(FakeSnapshot(FakeDocRef(self._db, self._col_name, doc_id), dict(data))
+                    for doc_id, data in rows)
 
 
 class FakeCollection(FakeQuery):
@@ -143,6 +167,9 @@ class FakeFirestore:
 
     def batch(self):
         return FakeBatch()
+
+    def get_all(self, refs, field_paths=None, transaction=None):
+        return iter([ref.get() for ref in refs])
 
     def transaction(self):
         return FakeTransaction()

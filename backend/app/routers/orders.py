@@ -1,16 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from google.cloud.firestore import Query as FsQuery
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from app.core.auth import get_current_user, get_current_admin
 from app.core.config import settings
-from app.database import get_db, _next_id, _to_ns, _doc_ns
+from app.database import get_db, _next_id, _next_ids, _to_ns, _doc_ns
 from app.schemas import (
     DailyOrderCreate, DailyOrderUpdate, DailyOrderFinalize, DailyOrderLinksUpdate,
-    DailyOrderResponse, DailyOrderListResponse, OrderItemInOrder, OrderLinkItem,
+    DailyOrderResponse, DailyOrderListResponse, DailyOrderPage, DailyOrderStats,
+    OrderItemInOrder, OrderLinkItem,
 )
 from app.services.cost_calculator import calculate_costs
+from app.services.ledger import member_names, chunks
 
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
@@ -36,17 +39,9 @@ def _minutes_remaining(deadline) -> int | None:
 
 def _load_items_with_names(db, order_id: int) -> list[SimpleNamespace]:
     """Load order items for an order_id, enriching each with member_name."""
-    members_cache: dict[int, str] = {}
-    items = []
-    for snap in db.collection("order_items").where("daily_order_id", "==", order_id).stream():
-        d = snap.to_dict()
-        mid = d["member_id"]
-        if mid not in members_cache:
-            m_doc = db.collection("members").document(str(mid)).get()
-            members_cache[mid] = m_doc.to_dict().get("name", "?") if m_doc.exists else "?"
-        d["member_name"] = members_cache[mid]
-        items.append(SimpleNamespace(**d))
-    return items
+    docs = [s.to_dict() for s in db.collection("order_items").where("daily_order_id", "==", order_id).stream()]
+    names = member_names(db, {d["member_id"] for d in docs})
+    return [SimpleNamespace(**d, member_name=names.get(d["member_id"], "?")) for d in docs]
 
 
 def _build_order_response(order, items) -> DailyOrderResponse:
@@ -135,42 +130,82 @@ def recalculate_costs(db, ref, order, extra_updates: dict | None = None) -> None
         batch.commit()
 
 
-@router.get("", response_model=list[DailyOrderListResponse])
+def _eater_counts(db, order_ids: list[int]) -> dict[int, int]:
+    counts = {oid: 0 for oid in order_ids}
+    for chunk in chunks(order_ids):
+        q = (db.collection("order_items")
+             .where("daily_order_id", "in", chunk)
+             .where("is_eating", "==", True)
+             .select(["daily_order_id"]))
+        for snap in q.stream():
+            counts[snap.to_dict()["daily_order_id"]] += 1
+    return counts
+
+
+def _encode_cursor(order) -> str:
+    return f"{order['order_date']}_{order['id']}"
+
+
+def _decode_cursor(cursor: str) -> dict:
+    try:
+        order_date, oid = cursor.rsplit("_", 1)
+        date.fromisoformat(order_date)
+        return {"order_date": order_date, "id": int(oid)}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Cursor không hợp lệ")
+
+
+@router.get("", response_model=DailyOrderPage)
 def list_orders(
     start_date: date | None = None,
     end_date: date | None = None,
-    limit: int = Query(default=30, le=100),
+    limit: int = Query(default=20, ge=1, le=100),
+    cursor: str | None = Query(default=None, description="next_cursor của trang trước"),
     db=Depends(get_db),
     _=Depends(get_current_user),
 ):
-    stream = db.collection("daily_orders").stream()
-    orders = [_to_ns(s.to_dict()) for s in stream]
-
-    # Filter by date range
+    """Orders newest first, paginated by cursor (order_date + id)."""
+    q = db.collection("daily_orders")
     if start_date:
-        orders = [o for o in orders if date.fromisoformat(str(o.order_date)) >= start_date]
+        q = q.where("order_date", ">=", str(start_date))
     if end_date:
-        orders = [o for o in orders if date.fromisoformat(str(o.order_date)) <= end_date]
+        q = q.where("order_date", "<=", str(end_date))
+    q = q.order_by("order_date", direction=FsQuery.DESCENDING).order_by("id", direction=FsQuery.DESCENDING)
+    if cursor:
+        q = q.start_after(_decode_cursor(cursor))
+    docs = [s.to_dict() for s in q.limit(limit + 1).stream()]
 
-    orders.sort(key=lambda o: str(o.order_date), reverse=True)
-    orders = orders[:limit]
+    has_more = len(docs) > limit
+    docs = docs[:limit]
+    counts = _eater_counts(db, [o["id"] for o in docs])
 
-    result = []
-    for order in orders:
-        order_date = order.order_date if isinstance(order.order_date, date) else date.fromisoformat(str(order.order_date))
-        items_snap = list(db.collection("order_items").where("daily_order_id", "==", order.id).stream())
-        eater_count = sum(1 for s in items_snap if s.to_dict().get("is_eating"))
-        result.append(DailyOrderListResponse(
-            id=order.id,
-            order_date=order_date,
-            name=getattr(order, "name", None),
-            status=order.status,
-            total_bill=getattr(order, "total_bill", 0) or 0,
-            eater_count=eater_count,
-            note=getattr(order, "note", None),
-            created_at=order.created_at,
-        ))
-    return result
+    items = [
+        DailyOrderListResponse(
+            id=o["id"],
+            order_date=date.fromisoformat(str(o["order_date"])),
+            name=o.get("name"),
+            status=o["status"],
+            total_bill=o.get("total_bill", 0) or 0,
+            eater_count=counts.get(o["id"], 0),
+            note=o.get("note"),
+            created_at=o["created_at"],
+        )
+        for o in docs
+    ]
+    return DailyOrderPage(items=items, next_cursor=_encode_cursor(docs[-1]) if has_more else None)
+
+
+@router.get("/stats", response_model=DailyOrderStats)
+def order_stats(db=Depends(get_db), _=Depends(get_current_user)):
+    """Totals over all orders, without loading full documents."""
+    total = finalized = spent = 0
+    for snap in db.collection("daily_orders").select(["status", "total_bill"]).stream():
+        o = snap.to_dict()
+        total += 1
+        if o.get("status") == "finalized":
+            finalized += 1
+            spent += o.get("total_bill", 0) or 0
+    return DailyOrderStats(total_orders=total, finalized_count=finalized, total_spent=spent)
 
 
 @router.get("/today", response_model=list[DailyOrderResponse])
@@ -233,10 +268,10 @@ def create_order(data: DailyOrderCreate, db=Depends(get_db), _=Depends(get_curre
 
     # Auto-create order items for all active members
     active_members = list(db.collection("members").where("is_active", "==", True).stream())
+    item_ids = _next_ids(db, "order_items", len(active_members))
     batch = db.batch()
-    for m_snap in active_members:
+    for m_snap, item_id in zip(active_members, item_ids):
         m = m_snap.to_dict()
-        item_id = _next_id(db, "order_items")
         ref = db.collection("order_items").document(str(item_id))
         batch.set(ref, {
             "id": item_id,

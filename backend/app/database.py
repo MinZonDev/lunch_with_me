@@ -35,15 +35,22 @@ def get_db():
 
 def _next_id(db, collection_name: str) -> int:
     """Atomically increment and return the next integer ID for a collection."""
+    return _next_ids(db, collection_name, 1)[0]
+
+
+def _next_ids(db, collection_name: str, count: int) -> list[int]:
+    """Atomically reserve `count` consecutive integer IDs in one transaction."""
+    if count <= 0:
+        return []
     ref = db.collection("_counters").document(collection_name)
 
     @fb_firestore.transactional
     def _update(transaction, doc_ref):
         snap = doc_ref.get(transaction=transaction)
         current = (snap.get("value") or 0) if snap.exists else 0
-        new_val = current + 1
+        new_val = current + count
         transaction.set(doc_ref, {"value": new_val})
-        return new_val
+        return list(range(current + 1, new_val + 1))
 
     return _update(db.transaction(), ref)
 

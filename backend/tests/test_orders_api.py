@@ -163,7 +163,7 @@ class TestOrderCrud:
                     json={"member_id": 2, "dish_name": "Gà chiên"})
         res = client.get("/api/orders", headers=user["headers"])
         assert res.status_code == 200
-        listed = next(o for o in res.json() if o["id"] == order["id"])
+        listed = next(o for o in res.json()["items"] if o["id"] == order["id"])
         assert listed["eater_count"] == 1
 
     def test_update_links_replaces_list(self, client, admin):
@@ -234,3 +234,67 @@ class TestExceptionItems:
                    json={"extra_item_description": "Trà", "extra_item_cost": 6})
         body = client.get(f"/api/orders/{oid}", headers=admin["headers"]).json()
         assert {i["member_id"]: i["total_cost"] for i in body["items"]} == {1: 28, 2: 28, 3: 34}
+
+
+class TestOrderListPagination:
+    def _seed_orders(self, client, admin, n):
+        return [_create_order(client, admin, order_date=f"2026-07-{d:02d}")["id"] for d in range(1, n + 1)]
+
+    def test_pages_newest_first_without_overlap(self, client, admin):
+        ids = self._seed_orders(client, admin, 5)
+        seen, cursor = [], None
+        while True:
+            params = {"limit": 2, **({"cursor": cursor} if cursor else {})}
+            body = client.get("/api/orders", headers=admin["headers"], params=params).json()
+            seen += [o["order_date"] for o in body["items"]]
+            cursor = body["next_cursor"]
+            if not cursor:
+                break
+        assert seen == [f"2026-07-{d:02d}" for d in range(5, 0, -1)]
+        assert len(ids) == 5
+
+    def test_same_day_orders_paginate_by_id(self, client, admin):
+        a = _create_order(client, admin, order_date="2026-07-10", name="Cơm")["id"]
+        b = _create_order(client, admin, order_date="2026-07-10", name="Chay")["id"]
+        first = client.get("/api/orders", headers=admin["headers"], params={"limit": 1}).json()
+        assert [o["id"] for o in first["items"]] == [b]
+        second = client.get("/api/orders", headers=admin["headers"],
+                            params={"limit": 1, "cursor": first["next_cursor"]}).json()
+        assert [o["id"] for o in second["items"]] == [a]
+        assert second["next_cursor"] is None
+
+    def test_date_range_filter(self, client, admin):
+        self._seed_orders(client, admin, 5)
+        body = client.get("/api/orders", headers=admin["headers"],
+                          params={"start_date": "2026-07-02", "end_date": "2026-07-03"}).json()
+        assert [o["order_date"] for o in body["items"]] == ["2026-07-03", "2026-07-02"]
+
+    def test_bad_cursor_rejected(self, client, admin):
+        res = client.get("/api/orders", headers=admin["headers"], params={"cursor": "garbage"})
+        assert res.status_code == 400
+
+    def test_stats(self, client, admin, user):
+        ids = self._seed_orders(client, admin, 3)
+        client.post(f"/api/orders/{ids[0]}/items", headers=user["headers"],
+                    json={"member_id": 2, "dish_name": "Gà"})
+        client.post(f"/api/orders/{ids[0]}/finalize", headers=admin["headers"], json={"total_bill": 40})
+        body = client.get("/api/orders/stats", headers=user["headers"]).json()
+        assert body == {"total_orders": 3, "finalized_count": 1, "total_spent": 40}
+
+
+class TestMonthlyReport:
+    def test_only_period_and_finalized_orders_counted(self, client, db, admin, user):
+        july = _create_order(client, admin, order_date="2026-07-10")["id"]
+        aug = _create_order(client, admin, order_date="2026-08-01")["id"]
+        open_july = _create_order(client, admin, order_date="2026-07-11")["id"]
+        for oid in (july, aug, open_july):
+            client.post(f"/api/orders/{oid}/items", headers=user["headers"],
+                        json={"member_id": 2, "dish_name": "Gà"})
+        for oid in (july, aug):
+            client.post(f"/api/orders/{oid}/finalize", headers=admin["headers"], json={"total_bill": 30})
+
+        body = client.get("/api/reports/monthly", headers=user["headers"],
+                          params={"year": 2026, "month": 7}).json()
+        assert body["grand_total"] == 30
+        assert [d["eater_count"] for d in body["days"]] == [1]
+        assert body["members"] == [{"member_id": 2, "member_name": "Bình", "days_eaten": 1, "total_cost": 30}]

@@ -94,12 +94,15 @@ def _job_monthly_statement():
     start_str = str(date(year, month, 1))
     end_str = str(date(year, month, last_day))
 
-    all_orders = [s.to_dict() for s in db.collection("daily_orders").where("status", "==", "finalized").stream()]
-    month_order_ids = {o["id"] for o in all_orders if start_str <= o["order_date"] <= end_str}
+    from app.services.ledger import compute_balances, finalized_order_ids
 
-    all_items = [s.to_dict() for s in db.collection("order_items").where("is_eating", "==", True).stream()]
-    all_deposits = [s.to_dict() for s in db.collection("deposits").stream()]
-    all_finalized_ids = {o["id"] for o in all_orders}
+    finalized_ids = finalized_order_ids(db)
+    month_items = [
+        d for d in (s.to_dict() for s in db.collection("order_items")
+                    .where("order_date", ">=", start_str).where("order_date", "<=", end_str).stream())
+        if d.get("is_eating") and d["daily_order_id"] in finalized_ids
+    ]
+    balances = compute_balances(db)
 
     users = [s.to_dict() for s in db.collection("users").where("is_active", "==", True).stream()]
     for user in users:
@@ -107,13 +110,10 @@ def _job_monthly_statement():
             continue
         mid = user["member_id"]
 
-        month_items = [i for i in all_items if i["member_id"] == mid and i["daily_order_id"] in month_order_ids]
-        days = len(month_items)
-        spent = sum(i.get("total_cost", 0) or 0 for i in month_items)
-
-        total_dep = sum(d["amount"] for d in all_deposits if d["member_id"] == mid)
-        total_spent_all = sum(i.get("total_cost", 0) or 0 for i in all_items if i["member_id"] == mid and i["daily_order_id"] in all_finalized_ids)
-        balance = total_dep - total_spent_all
+        mine = [i for i in month_items if i["member_id"] == mid]
+        days = len(mine)
+        spent = sum(i.get("total_cost", 0) or 0 for i in mine)
+        balance = balances[mid]["balance"] if mid in balances else 0
 
         send_monthly_statement(month, year, user["full_name"], user["email"], days, spent, balance)
 
@@ -130,13 +130,11 @@ def check_low_balance(member_id: int):
     if not users or not users[0].get("email"):
         return
 
-    user = users[0]
-    finalized_ids = {s.to_dict()["id"] for s in db.collection("daily_orders").where("status", "==", "finalized").stream()}
-    all_items = [s.to_dict() for s in db.collection("order_items").where("is_eating", "==", True).stream()]
+    from app.services.ledger import compute_balances
 
-    total_dep = sum(s.to_dict()["amount"] for s in db.collection("deposits").where("member_id", "==", member_id).stream())
-    total_spent = sum(i.get("total_cost", 0) or 0 for i in all_items if i["member_id"] == member_id and i["daily_order_id"] in finalized_ids)
-    balance = total_dep - total_spent
+    user = users[0]
+    b = compute_balances(db, member_id).get(member_id)
+    balance = b["balance"] if b else 0
 
     if 0 <= balance <= settings.low_balance_threshold:
         send_low_balance_alert(user["full_name"], user["email"], balance)
@@ -157,13 +155,10 @@ def _job_debt_reminder():
         return
     webhook_url = doc.to_dict().get("teams_webhook_url", "")
 
+    from app.services.ledger import compute_balances
+
     # Compute balances for all active users
-    all_txns = [s.to_dict() for s in db.collection("deposits").stream()]
-    all_items = [s.to_dict() for s in db.collection("order_items").where("is_eating", "==", True).stream()]
-    finalized_ids = {
-        s.to_dict()["id"]
-        for s in db.collection("daily_orders").where("status", "==", "finalized").stream()
-    }
+    balances = compute_balances(db)
     users = [s.to_dict() for s in db.collection("users").where("is_active", "==", True).stream()]
 
     sent = 0
@@ -172,11 +167,7 @@ def _job_debt_reminder():
         mid = u.get("member_id")
         if not mid:
             continue
-        my_txns = [t for t in all_txns if t["member_id"] == mid]
-        deposited = sum(t["amount"] for t in my_txns if t.get("type", "deposit") == "deposit" and t.get("status") == "approved")
-        charged = sum(t["amount"] for t in my_txns if t.get("type") == "charge")
-        spent = sum(i.get("total_cost", 0) or 0 for i in all_items if i["member_id"] == mid and i["daily_order_id"] in finalized_ids)
-        balance = deposited - charged - spent
+        balance = balances[mid]["balance"] if mid in balances else 0
         if balance < 0:
             debtors.append({"name": u.get("nickname") or u["full_name"], "balance": balance, "email": u.get("email", "")})
             if u.get("email"):

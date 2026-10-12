@@ -6,14 +6,24 @@ import Link from 'next/link';
 
 const MONTHS_VI = ['', 'Th1', 'Th2', 'Th3', 'Th4', 'Th5', 'Th6', 'Th7', 'Th8', 'Th9', 'Th10', 'Th11', 'Th12'];
 
+const PAGE_SIZE = 20;
+
 export default function HistoryPage() {
   const [orders, setOrders] = useState([]);
+  const [stats, setStats] = useState({ total_orders: 0, finalized_count: 0, total_spent: 0 });
+  const [nextCursor, setNextCursor] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const fetchOrders = useCallback(async () => {
     try {
-      const data = await ordersAPI.list({ limit: 100 });
-      setOrders(data);
+      const [page, statsData] = await Promise.all([
+        ordersAPI.list({ limit: PAGE_SIZE }),
+        ordersAPI.stats(),
+      ]);
+      setOrders(page.items);
+      setNextCursor(page.next_cursor);
+      setStats(statsData);
     } catch (err) {
       console.error(err);
     } finally {
@@ -24,6 +34,20 @@ export default function HistoryPage() {
   useEffect(() => {
     fetchOrders();
   }, [fetchOrders]);
+
+  const loadMore = async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await ordersAPI.list({ limit: PAGE_SIZE, cursor: nextCursor });
+      setOrders(prev => [...prev, ...page.items]);
+      setNextCursor(page.next_cursor);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   if (loading) {
     return <div className="loading-spinner"><div className="spinner" /></div>;
@@ -38,11 +62,8 @@ export default function HistoryPage() {
     grouped[key].push(order);
   });
 
-  const totalSpent = orders
-    .filter((o) => o.status === 'finalized')
-    .reduce((sum, o) => sum + (o.total_bill || 0), 0);
-
-  const finalizedCount = orders.filter((o) => o.status === 'finalized').length;
+  const totalSpent = stats.total_spent;
+  const finalizedCount = stats.finalized_count;
 
   return (
     <>
@@ -55,7 +76,7 @@ export default function HistoryPage() {
         <div className="stat-card">
           <div className="stat-icon orange">📦</div>
           <div className="stat-info">
-            <h3>{orders.length}</h3>
+            <h3>{stats.total_orders}</h3>
             <p>Tổng orders</p>
           </div>
         </div>
@@ -134,6 +155,14 @@ export default function HistoryPage() {
             </div>
           );
         })
+      )}
+
+      {nextCursor && (
+        <div className="flex" style={{ justifyContent: 'center' }}>
+          <button className="btn btn-secondary" onClick={loadMore} disabled={loadingMore}>
+            {loadingMore ? '⏳ Đang tải...' : 'Tải thêm'}
+          </button>
+        </div>
       )}
     </>
   );

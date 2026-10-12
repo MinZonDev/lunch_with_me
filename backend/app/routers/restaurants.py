@@ -31,12 +31,15 @@ def list_restaurants(db=Depends(get_db), _=Depends(get_current_user)):
 @router.get("/last-used", response_model=RestaurantResponse | None)
 def get_last_used(db=Depends(get_db), _=Depends(get_current_user)):
     """Return the restaurant used in the most recent finalized or locked order."""
-    orders = [s.to_dict() for s in db.collection("daily_orders").stream()]
-    orders = [o for o in orders if o.get("restaurant_id")]
-    if not orders:
+    from google.cloud.firestore import Query as FsQuery
+
+    # Recent orders only; most days have a restaurant, so 20 is plenty
+    recent = (db.collection("daily_orders")
+              .order_by("order_date", direction=FsQuery.DESCENDING)
+              .select(["restaurant_id"]).limit(20).stream())
+    restaurant_id = next((s.to_dict().get("restaurant_id") for s in recent if s.to_dict().get("restaurant_id")), None)
+    if not restaurant_id:
         return None
-    orders.sort(key=lambda o: o["order_date"], reverse=True)
-    restaurant_id = orders[0]["restaurant_id"]
     doc = db.collection("restaurants").document(str(restaurant_id)).get()
     if not doc.exists:
         return None

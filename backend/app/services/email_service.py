@@ -212,3 +212,54 @@ def send_low_balance_alert(member_name: str, email: str, balance: int):
     </div>
     """
     _send(email, subject, html)
+
+
+def send_withdrawal_request(admin_emails: list[str], member_name: str, amount: int,
+                            bank_name: str, account_number: str, account_name: str, frontend_url: str):
+    """Báo admin có yêu cầu rút tiền mới cần duyệt."""
+    from html import escape
+
+    if not admin_emails:
+        return
+    subject = f"💸 Yêu cầu rút tiền từ {member_name} - Lunch With Me"
+    member_name, bank_name = escape(member_name), escape(bank_name)
+    account_number, account_name = escape(account_number), escape(account_name)
+    html = f"""
+    <div style="font-family:sans-serif;max-width:520px;margin:auto;background:#1a1a2e;color:#f0f0f5;padding:32px;border-radius:16px">
+      <h2 style="color:#ff8c42;margin:0 0 16px">🍱 Lunch With Me</h2>
+      <p><strong>{member_name}</strong> yêu cầu rút <strong style="color:#ff8c42">{amount * 1000:,} đ</strong> từ số dư deposit.</p>
+      <table style="width:100%;border-collapse:collapse;font-size:14px;margin:16px 0">
+        <tr><td style="color:#a0a0b8;padding:5px 0;width:130px">Ngân hàng</td><td style="font-weight:600">{bank_name}</td></tr>
+        <tr><td style="color:#a0a0b8;padding:5px 0">Số tài khoản</td><td style="font-weight:700;letter-spacing:1px;color:#ffe66d">{account_number}</td></tr>
+        <tr><td style="color:#a0a0b8;padding:5px 0">Người nhận</td><td style="font-weight:600">{account_name}</td></tr>
+      </table>
+      <a href="{frontend_url}/deposit"
+         style="display:inline-block;background:#ff8c42;color:#fff;padding:11px 24px;border-radius:8px;text-decoration:none;font-weight:700">
+        Duyệt &amp; chuyển khoản →
+      </a>
+    </div>
+    """
+    _send(admin_emails, subject, html)
+
+
+def send_withdrawal_result(full_name: str, email: str, amount: int, done: bool, reason: str | None = None):
+    """Báo người dùng yêu cầu rút tiền đã được chuyển hoặc bị từ chối."""
+    from html import escape
+
+    full_name = escape(full_name)
+    if done:
+        subject = "✅ Đã chuyển tiền rút - Lunch With Me"
+        body = f"Admin đã chuyển <strong style=\"color:#06d6a0\">{amount * 1000:,} đ</strong> cho bạn. Số dư deposit đã được trừ tương ứng."
+    else:
+        subject = "❌ Yêu cầu rút tiền bị từ chối - Lunch With Me"
+        body = f"Yêu cầu rút <strong>{amount * 1000:,} đ</strong> của bạn đã bị từ chối."
+        if reason:
+            body += f"<br/>Lý do: <em>{escape(reason)}</em>"
+    html = f"""
+    <div style="font-family:sans-serif;max-width:520px;margin:auto;background:#1a1a2e;color:#f0f0f5;padding:32px;border-radius:16px">
+      <h2 style="color:#ff8c42;margin:0 0 16px">🍱 Lunch With Me</h2>
+      <p>Xin chào <strong>{full_name}</strong>,</p>
+      <p>{body}</p>
+    </div>
+    """
+    _send(email, subject, html)

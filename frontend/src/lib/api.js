@@ -114,6 +114,15 @@ export const depositsAPI = {
   delete: (id) => fetchAPI(`/api/deposits/${id}`, { method: 'DELETE' }),
 };
 
+// ============== Withdrawals ==============
+export const withdrawalsAPI = {
+  list: (status = null) => fetchAPI(`/api/withdrawals${status ? `?status=${status}` : ''}`),
+  create: (data) => fetchAPI('/api/withdrawals', { method: 'POST', body: JSON.stringify(data) }),
+  cancel: (id) => fetchAPI(`/api/withdrawals/${id}/cancel`, { method: 'POST' }),
+  reject: (id, reason) => fetchAPI(`/api/withdrawals/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  complete: (id) => fetchAPI(`/api/withdrawals/${id}/complete`, { method: 'POST' }),
+};
+
 // ============== Restaurants ==============
 export const restaurantsAPI = {
   list: () => fetchAPI('/api/restaurants'),
@@ -155,6 +164,17 @@ export function txnMeta(type, status) {
       return { icon: '📤', label: 'Khoản chi', sign: '−', color: '#ff6b6b', badge: '📤 Đã trừ' };
     case 'order_payment':
       return { icon: '🛵', label: 'Trả tiền quán', sign: '+', color: '#06d6a0', badge: '🛵 Đã cộng' };
+    case 'withdrawal': {
+      const badges = { pending: '⏳ Chờ chuyển', done: '💸 Đã chuyển', rejected: '❌ Từ chối', cancelled: '🚫 Đã huỷ' };
+      const labels = { pending: '⏳ Yêu cầu rút tiền', done: 'Rút tiền', rejected: 'Rút tiền (bị từ chối)', cancelled: 'Rút tiền (đã huỷ)' };
+      return {
+        icon: '💸',
+        label: labels[status] || 'Rút tiền',
+        sign: '−',
+        color: status === 'done' ? '#ff6b6b' : 'var(--text-muted)',
+        badge: badges[status] || status,
+      };
+    }
     case 'spending':
       return { icon: '🍽️', label: 'Tiền ăn', sign: '−', color: '#ff6b6b' };
     default:

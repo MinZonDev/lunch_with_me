@@ -28,7 +28,7 @@ def test_balance_formula(db):
     _seed_item(db, 3, 1, 1, 99, is_eating=False)            # not eating: ignored
 
     b = compute_balances(db)[1]
-    assert b == {"deposited": 200, "charged": 15, "spent": 35, "balance": 150}
+    assert b == {"deposited": 200, "charged": 15, "spent": 35, "withdrawn": 0, "balance": 150}
     assert compute_balances(db, 1)[1] == b
 
 

@@ -308,7 +308,7 @@ class DepositResponse(BaseModel):
     amount: int
     note: Optional[str] = None
     status: str  # pending | approved
-    type: str = "deposit"  # deposit | charge | order_payment
+    type: str = "deposit"  # deposit | charge | order_payment | withdrawal
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -322,6 +322,7 @@ class MemberBalanceResponse(BaseModel):
     total_deposited: int
     total_charged: int  # khoản chi ngoài
     total_spent: int
+    total_withdrawn: int = 0
     balance: int
 
     model_config = {"from_attributes": True}
@@ -431,6 +432,7 @@ class MemberDetailResponse(BaseModel):
     total_deposited: int
     total_charged: int
     total_spent: int
+    total_withdrawn: int = 0
     balance: int
     transactions: list[MemberTransactionItem]
 
@@ -443,3 +445,32 @@ class FrontendLogEntry(BaseModel):
     context: Optional[dict] = None
     timestamp: Optional[str] = None
     url: Optional[str] = None
+
+
+# ============== Withdrawal Schemas ==============
+
+class WithdrawalCreate(BaseModel):
+    amount: int = Field(..., ge=1, description="Số tiền rút (nghìn đồng)")
+    bank_code: str = Field(..., min_length=2, max_length=20, description="Mã ngân hàng VietQR, VD: VCB")
+    bank_name: str = Field(..., min_length=1, max_length=100)
+    account_number: str = Field(..., pattern=r"^[0-9A-Za-z]{4,30}$")
+    account_name: str = Field(..., min_length=1, max_length=100)
+
+
+class WithdrawalReject(BaseModel):
+    reason: Optional[str] = Field(None, max_length=300)
+
+
+class WithdrawalResponse(BaseModel):
+    id: int
+    member_id: int
+    member_name: str
+    amount: int
+    bank_code: str
+    bank_name: str
+    account_number: str
+    account_name: str
+    status: str  # pending | done | rejected | cancelled
+    reject_reason: Optional[str] = None
+    created_at: datetime
+    processed_at: Optional[datetime] = None

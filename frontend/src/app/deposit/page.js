@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { depositsAPI, membersAPI, formatMoney, txnMeta } from '@/lib/api';
+import { depositsAPI, membersAPI, withdrawalsAPI, formatMoney, txnMeta } from '@/lib/api';
 import { isAdmin, getUser } from '@/lib/auth';
 import { useToast } from '@/components/Toast';
+import { WithdrawalModal, MyWithdrawals, PendingWithdrawalsAdmin } from '@/components/Withdrawals';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -61,6 +62,8 @@ export default function DepositPage() {
 
   const [summary, setSummary] = useState([]);
   const [deposits, setDeposits] = useState([]);
+  const [withdrawals, setWithdrawals] = useState([]);
+  const [showWithdraw, setShowWithdraw] = useState(false);
   const [spending, setSpending] = useState([]);
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -85,12 +88,17 @@ export default function DepositPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const tasks = [depositsAPI.summary(), depositsAPI.list()];
+      const tasks = [
+        depositsAPI.summary(),
+        depositsAPI.list(),
+        withdrawalsAPI.list(admin ? 'pending' : null).catch(() => []),
+      ];
       if (admin) tasks.push(membersAPI.list());
       else tasks.push(depositsAPI.spending());
-      const [summaryData, depositsData, extra] = await Promise.all(tasks);
+      const [summaryData, depositsData, withdrawalsData, extra] = await Promise.all(tasks);
       setSummary(summaryData);
       setDeposits(depositsData);
+      setWithdrawals(withdrawalsData);
       if (admin) setMembers(extra || []);
       else setSpending(extra || []);
     } catch (err) {
@@ -185,8 +193,11 @@ export default function DepositPage() {
 
   if (loading) return <div className="loading-spinner"><div className="spinner" /></div>;
 
-  const pendingDeposits = deposits.filter(d => d.status === 'pending');
+  const isDepositRequest = (d) => (d.type || 'deposit') === 'deposit';
+  const pendingDeposits = deposits.filter(d => isDepositRequest(d) && d.status === 'pending');
   const myBalance = summary[0] || null;
+  const hasPendingWithdrawal = withdrawals.some(w => w.status === 'pending');
+  const canWithdraw = !admin && myBalance && myBalance.balance > 0 && !hasPendingWithdrawal;
   const totalDeposited = summary.reduce((s, m) => s + m.total_deposited, 0);
   const totalSpent = summary.reduce((s, m) => s + m.total_spent, 0);
   const totalBalance = summary.reduce((s, m) => s + m.balance, 0);
@@ -212,6 +223,9 @@ export default function DepositPage() {
           </div>
           <div className="flex gap-8">
             {admin && <button className="btn btn-secondary" onClick={() => openModal('charge')}>📤 Thêm Khoản Chi</button>}
+            {canWithdraw && (
+              <button className="btn btn-secondary" onClick={() => setShowWithdraw(true)}>💸 Rút Tiền</button>
+            )}
             <button className="btn btn-primary" onClick={() => openModal('deposit')}>
               ➕ {admin ? 'Nạp Tiền' : 'Yêu Cầu Nạp'}
             </button>
@@ -239,6 +253,8 @@ export default function DepositPage() {
           </div>
         </div>
       )}
+
+      {admin && <PendingWithdrawalsAdmin withdrawals={withdrawals} onChanged={fetchData} addToast={addToast} />}
 
       {/* Admin stats */}
       {admin && (
@@ -272,6 +288,7 @@ export default function DepositPage() {
               <span>💵 Đã nạp: <strong>{formatMoney(myBalance.total_deposited)}</strong></span>
               {myBalance.total_charged > 0 && <span style={{ color: '#ff6b6b' }}>📤 Khoản chi: <strong>{formatMoney(myBalance.total_charged)}</strong></span>}
               <span>🛒 Tiền ăn: <strong>{formatMoney(myBalance.total_spent)}</strong></span>
+              {myBalance.total_withdrawn > 0 && <span>💸 Đã rút: <strong>{formatMoney(myBalance.total_withdrawn)}</strong></span>}
             </div>
             <button className="btn btn-ghost btn-sm" style={{ marginTop: '14px', color: 'var(--text-muted)', fontSize: '0.8rem' }}
               onClick={() => openMemberDetail(myBalance)}>
@@ -279,11 +296,13 @@ export default function DepositPage() {
             </button>
           </div>
 
+          <MyWithdrawals withdrawals={withdrawals} onChanged={fetchData} addToast={addToast} />
+
           {/* Pending deposits for this user */}
-          {deposits.filter(d => d.status === 'pending').length > 0 && (
+          {pendingDeposits.length > 0 && (
             <div className="card mb-16" style={{ borderLeft: '3px solid #ffe66d' }}>
               <div style={{ fontSize: '0.85rem', color: '#ffe66d', fontWeight: 600, marginBottom: '8px' }}>⏳ Yêu cầu đang chờ duyệt</div>
-              {deposits.filter(d => d.status === 'pending').map(d => (
+              {pendingDeposits.map(d => (
                 <div key={d.id} className="flex items-center gap-12" style={{ fontSize: '0.85rem' }}>
                   <span style={{ color: '#06d6a0', fontWeight: 700 }}>+{formatMoney(d.amount)}</span>
                   <span style={{ color: 'var(--text-muted)' }}>{d.note || '—'}</span>
@@ -339,6 +358,7 @@ export default function DepositPage() {
                 <span>💵 Nạp: {formatMoney(member.total_deposited)}</span>
                 {member.total_charged > 0 && <span style={{ color: '#ff6b6b' }}>📤 Chi: {formatMoney(member.total_charged)}</span>}
                 <span>🛒 Ăn: {formatMoney(member.total_spent)}</span>
+                {member.total_withdrawn > 0 && <span>💸 Rút: {formatMoney(member.total_withdrawn)}</span>}
               </div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '8px', textAlign: 'right' }}>
                 Xem chi tiết →
@@ -408,7 +428,7 @@ export default function DepositPage() {
                           </>
                         ) : (
                           <>
-                            {d.status === 'pending' && <button className="btn btn-primary btn-sm" onClick={() => handleApprove(d.id)}>✅ Duyệt</button>}
+                            {isDepositRequest(d) && d.status === 'pending' && <button className="btn btn-primary btn-sm" onClick={() => handleApprove(d.id)}>✅ Duyệt</button>}
                             <button className="btn btn-ghost btn-sm" title="Sửa giao dịch" onClick={() => startEditTxn(d)}>✏️</button>
                             <button className="btn btn-ghost btn-sm" style={{ color: 'var(--status-finalized)' }} onClick={() => handleDelete(d.id)}>🗑️</button>
                           </>
@@ -681,6 +701,14 @@ export default function DepositPage() {
             )}
           </div>
         </div>
+      )}
+      {showWithdraw && myBalance && (
+        <WithdrawalModal
+          balance={myBalance.balance}
+          onClose={() => setShowWithdraw(false)}
+          onDone={() => { setShowWithdraw(false); fetchData(); }}
+          addToast={addToast}
+        />
       )}
     </>
   );

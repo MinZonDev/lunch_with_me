@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { membersAPI, ordersAPI, depositsAPI, formatMoney, getTodayString } from '@/lib/api';
+import { membersAPI, ordersAPI, depositsAPI, withdrawalsAPI, formatMoney, getTodayString } from '@/lib/api';
 import Link from 'next/link';
 import { useToast } from '@/components/Toast';
 
@@ -10,6 +10,7 @@ export default function AdminPage() {
   const [todayOrders, setTodayOrders] = useState([]);
   const [summary, setSummary] = useState([]);
   const [pendingCount, setPendingCount] = useState(0);
+  const [pendingWithdrawals, setPendingWithdrawals] = useState(0);
   const [recentOrders, setRecentOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddMember, setShowAddMember] = useState(false);
@@ -18,17 +19,19 @@ export default function AdminPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [membersList, today, summaryData, depositsList, ordersList] = await Promise.all([
+      const [membersList, today, summaryData, depositsList, ordersList, withdrawalsList] = await Promise.all([
         membersAPI.list(false),
         ordersAPI.getToday().catch(() => []),
         depositsAPI.summary().catch(() => []),
-        depositsAPI.list({ status: 'pending' }).catch(() => []),
+        depositsAPI.list({ status: 'pending', type: 'deposit' }).catch(() => []),
         ordersAPI.list({ limit: 14 }).then(r => r.items).catch(() => []),
+        withdrawalsAPI.list('pending').catch(() => []),
       ]);
       setMembers(membersList);
       setTodayOrders(Array.isArray(today) ? today : (today ? [today] : []));
       setSummary(summaryData);
       setPendingCount(depositsList.length);
+      setPendingWithdrawals(withdrawalsList.length);
       setRecentOrders(ordersList);
     } catch (err) {
       console.error(err);
@@ -123,6 +126,13 @@ export default function AdminPage() {
             <p>Yêu cầu nạp tiền chờ duyệt</p>
           </div>
         </div>
+        <Link href="/deposit" className="stat-card" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <div className={`stat-icon ${pendingWithdrawals > 0 ? 'orange' : 'green'}`}>💸</div>
+          <div className="stat-info">
+            <h3>{pendingWithdrawals}</h3>
+            <p>Yêu cầu rút tiền chờ chuyển</p>
+          </div>
+        </Link>
         <div className="stat-card">
           <div className={`stat-icon ${debtors.length > 0 ? 'red' : 'green'}`}>
             {debtors.length > 0 ? '⚠️' : '✅'}

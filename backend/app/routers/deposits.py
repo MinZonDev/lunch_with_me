@@ -64,6 +64,7 @@ def get_deposit_summary(db=Depends(get_db), current_user=Depends(get_current_use
             total_deposited=b["deposited"],
             total_charged=b["charged"],
             total_spent=b["spent"],
+            total_withdrawn=b["withdrawn"],
             balance=b["balance"],
         ))
     return result
@@ -72,6 +73,7 @@ def get_deposit_summary(db=Depends(get_db), current_user=Depends(get_current_use
 @router.get("", response_model=list[DepositResponse])
 def list_deposits(
     status: str | None = Query(default=None, description="Lọc theo trạng thái, VD: pending"),
+    type: str | None = Query(default=None, description="deposit | charge | order_payment | withdrawal"),
     limit: int | None = Query(default=None, ge=1, le=500),
     db=Depends(get_db),
     current_user=Depends(get_current_user),
@@ -90,6 +92,8 @@ def list_deposits(
         stream = col.where("member_id", "==", mid).stream()
 
     deposits = [s.to_dict() for s in stream]
+    if type:
+        deposits = [d for d in deposits if d.get("type", "deposit") == type]
     deposits.sort(key=lambda d: d["created_at"], reverse=True)
     if limit:
         deposits = deposits[:limit]
@@ -176,6 +180,8 @@ def approve_deposit(deposit_id: int, db=Depends(get_db), _=Depends(get_current_a
     if not doc.exists:
         raise HTTPException(status_code=404, detail="Deposit not found")
     d = doc.to_dict()
+    if d.get("type", "deposit") != "deposit":
+        raise HTTPException(status_code=400, detail="Chỉ duyệt được yêu cầu nạp tiền")
     if d.get("status") == "approved":
         raise HTTPException(status_code=400, detail="Deposit đã được duyệt")
     ref.update({"status": "approved"})
@@ -331,6 +337,7 @@ def get_member_detail(member_id: int, db=Depends(get_db), current_user=Depends(g
         total_deposited=b["deposited"],
         total_charged=b["charged"],
         total_spent=b["spent"],
+        total_withdrawn=b["withdrawn"],
         balance=b["balance"],
         transactions=txns,
     )

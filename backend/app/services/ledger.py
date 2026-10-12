@@ -1,6 +1,7 @@
 """Shared read helpers for balances and lookups.
 
-Balance = approved deposits - charges - finalized meal costs.
+Balance = approved deposits + order payments - charges - finalized meal costs
+          - completed withdrawals.
 Every place that shows or acts on a balance goes through compute_balances so
 the formula lives in one spot.
 
@@ -25,6 +26,9 @@ def classify_txn(txn: dict) -> tuple[str, int]:
         return "deposited", amount
     if ttype == "charge":
         return "charged", amount
+    if ttype == "withdrawal":
+        # Only money actually transferred out counts; pending/rejected/cancelled don't
+        return ("withdrawn", amount) if txn.get("status") == "done" else ("ignored", 0)
     return "ignored", 0
 
 
@@ -92,7 +96,7 @@ def compute_balances(db, member_id: int | None = None) -> dict[int, dict]:
         deposits = deposits.where("member_id", "==", member_id)
         items = items.where("member_id", "==", member_id)
 
-    totals: dict[int, dict] = defaultdict(lambda: {"deposited": 0, "charged": 0, "spent": 0})
+    totals: dict[int, dict] = defaultdict(lambda: {"deposited": 0, "charged": 0, "spent": 0, "withdrawn": 0})
 
     for snap in deposits.select(["member_id", "amount", "type", "status"]).stream():
         t = snap.to_dict()
@@ -107,9 +111,9 @@ def compute_balances(db, member_id: int | None = None) -> dict[int, dict]:
             totals[i["member_id"]]["spent"] += i.get("total_cost", 0) or 0
 
     for t in totals.values():
-        t["balance"] = t["deposited"] - t["charged"] - t["spent"]
+        t["balance"] = t["deposited"] - t["charged"] - t["spent"] - t["withdrawn"]
     return totals
 
 
 def empty_balance() -> dict:
-    return {"deposited": 0, "charged": 0, "spent": 0, "balance": 0}
+    return {"deposited": 0, "charged": 0, "spent": 0, "withdrawn": 0, "balance": 0}

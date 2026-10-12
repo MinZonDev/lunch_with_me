@@ -43,3 +43,19 @@ export function isAdmin() {
   const user = getUser();
   return user?.role === 'admin';
 }
+
+// Admin or orderer (người đặt cơm): may create, lock and finalize orders
+export function canManageOrders() {
+  const role = getUser()?.role;
+  return role === 'admin' || role === 'orderer';
+}
+
+export const ROLE_LABELS = {
+  admin: '👑 Admin',
+  orderer: '🛵 Người đặt cơm',
+  user: '👤 User',
+};
+
+export function roleLabel(role) {
+  return ROLE_LABELS[role] || ROLE_LABELS.user;
+}

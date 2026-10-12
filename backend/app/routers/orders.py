@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
-from app.core.auth import get_current_user, get_current_admin
+from app.core.auth import get_current_user, get_current_admin, get_order_manager
 from app.core.config import settings
 from app.database import get_db, _next_id, _next_ids, _to_ns, _doc_ns
 from app.schemas import (
@@ -88,6 +88,9 @@ def _build_order_response(order, items) -> DailyOrderResponse:
         note=getattr(order, "note", None),
         created_by=getattr(order, "created_by", None),
         created_at=order.created_at,
+        payer_member_id=getattr(order, "payer_member_id", None),
+        payer_name=getattr(order, "payer_name", None),
+        payer_amount=getattr(order, "payer_amount", 0) or 0,
         items=item_responses,
         eater_count=eater_count,
     )
@@ -153,6 +156,48 @@ def _decode_cursor(cursor: str) -> dict:
         return {"order_date": order_date, "id": int(oid)}
     except ValueError:
         raise HTTPException(status_code=400, detail="Cursor không hợp lệ")
+
+
+def _payer_credit_snaps(db, order_id: int) -> list:
+    return list(db.collection("deposits")
+                .where("daily_order_id", "==", order_id)
+                .where("type", "==", "order_payment").stream())
+
+
+def sync_payer_credit(db, order: dict) -> None:
+    """Keep the payer's 'Đặt cơm ngày dd-mm-yyyy' credit in line with the order.
+
+    One credit per order: created/updated while the order is finalized with a
+    member payer, removed otherwise (admin payer, reopened order).
+    """
+    existing = _payer_credit_snaps(db, order["id"])
+    payer_id = order.get("payer_member_id")
+    amount = order.get("payer_amount", 0) or 0
+
+    if order.get("status") != "finalized" or payer_id is None or amount <= 0:
+        for snap in existing:
+            snap.reference.delete()
+        return
+
+    day = date.fromisoformat(str(order["order_date"])).strftime("%d-%m-%Y")
+    note = f"Đặt cơm ngày {day}"
+    if order.get("name"):
+        note += f" ({order['name']})"
+    fields = {"member_id": payer_id, "amount": amount, "note": note, "status": "approved"}
+    if existing:
+        existing[0].reference.update(fields)
+        for extra in existing[1:]:
+            extra.reference.delete()
+        return
+
+    dep_id = _next_id(db, "deposits")
+    db.collection("deposits").document(str(dep_id)).set({
+        "id": dep_id,
+        **fields,
+        "type": "order_payment",
+        "daily_order_id": order["id"],
+        "created_at": datetime.now(timezone.utc),
+    })
 
 
 @router.get("", response_model=DailyOrderPage)
@@ -226,7 +271,7 @@ def get_order(order_id: int, db=Depends(get_db), _=Depends(get_current_user)):
 
 
 @router.post("", response_model=DailyOrderResponse, status_code=201)
-def create_order(data: DailyOrderCreate, db=Depends(get_db), _=Depends(get_current_admin)):
+def create_order(data: DailyOrderCreate, db=Depends(get_db), _=Depends(get_order_manager)):
     order_id = _next_id(db, "daily_orders")
     doc_id = str(order_id)  # Use numeric ID as doc ID to allow multiple per day
 
@@ -327,12 +372,14 @@ def delete_order(order_id: int, db=Depends(get_db), _=Depends(get_current_admin)
     batch = db.batch()
     for snap in db.collection("order_items").where("daily_order_id", "==", order_id).stream():
         batch.delete(snap.reference)
+    for snap in _payer_credit_snaps(db, order_id):
+        batch.delete(snap.reference)
     batch.delete(ref)
     batch.commit()
 
 
 @router.post("/{order_id}/lock", response_model=DailyOrderResponse)
-def lock_order(order_id: int, db=Depends(get_db), _=Depends(get_current_admin)):
+def lock_order(order_id: int, db=Depends(get_db), _=Depends(get_order_manager)):
     ref, order = _get_order_by_id(db, order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -344,23 +391,49 @@ def lock_order(order_id: int, db=Depends(get_db), _=Depends(get_current_admin)):
 
 
 @router.post("/{order_id}/reopen", response_model=DailyOrderResponse)
-def reopen_order(order_id: int, db=Depends(get_db), _=Depends(get_current_admin)):
+def reopen_order(order_id: int, db=Depends(get_db), current_user=Depends(get_order_manager)):
     ref, order = _get_order_by_id(db, order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    if order.status == "finalized" and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Chỉ admin được mở lại order đã chốt")
     ref.update({"status": "open"})
+    # Costs of a non-finalized order don't count, so neither does the payer credit
+    sync_payer_credit(db, ref.get().to_dict())
     items = _load_items_with_names(db, order_id)
     return _build_order_response(_to_ns(ref.get().to_dict()), items)
 
 
 @router.post("/{order_id}/finalize", response_model=DailyOrderResponse)
-def finalize_order(order_id: int, data: DailyOrderFinalize, db=Depends(get_db), _=Depends(get_current_admin)):
+def finalize_order(order_id: int, data: DailyOrderFinalize, db=Depends(get_db), _=Depends(get_order_manager)):
     ref, order = _get_order_by_id(db, order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
+    old_bill = getattr(order, "total_bill", None)
     order.total_bill = data.total_bill
-    recalculate_costs(db, ref, order, {"status": "finalized"})
+    updates = {"status": "finalized"}
+
+    if {"payer_member_id", "payer_amount"} & data.model_fields_set:
+        payer_id = data.payer_member_id
+        payer_name = None
+        if payer_id is not None:
+            m_doc = db.collection("members").document(str(payer_id)).get()
+            if not m_doc.exists:
+                raise HTTPException(status_code=404, detail="Không tìm thấy người trả tiền")
+            payer_name = m_doc.to_dict().get("name")
+        amount = data.payer_amount if data.payer_amount is not None else data.total_bill
+        updates.update({
+            "payer_member_id": payer_id,
+            "payer_name": payer_name,
+            "payer_amount": amount if payer_id is not None else 0,
+        })
+    elif getattr(order, "payer_member_id", None) is not None and getattr(order, "payer_amount", 0) == old_bill:
+        # Bill edited without touching the payer: the amount followed the old bill, keep it in sync
+        updates["payer_amount"] = data.total_bill
+
+    recalculate_costs(db, ref, order, updates)
+    sync_payer_credit(db, ref.get().to_dict())
 
     order = _to_ns(ref.get().to_dict())
     items = _load_items_with_names(db, order_id)
@@ -368,7 +441,7 @@ def finalize_order(order_id: int, data: DailyOrderFinalize, db=Depends(get_db), 
 
 
 @router.put("/{order_id}/links", response_model=DailyOrderResponse)
-def update_links(order_id: int, data: DailyOrderLinksUpdate, db=Depends(get_db), _=Depends(get_current_admin)):
+def update_links(order_id: int, data: DailyOrderLinksUpdate, db=Depends(get_db), _=Depends(get_order_manager)):
     """Replace the full list of order links (admin only)."""
     ref, order = _get_order_by_id(db, order_id)
     if not order:

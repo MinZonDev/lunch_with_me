@@ -50,7 +50,7 @@ class UserCreate(BaseModel):
     full_name: str = Field(..., min_length=1, max_length=100)
     email: str = Field(..., max_length=255)
     date_of_birth: Optional[date] = None
-    role: str = Field(default="user", pattern="^(user|admin)$")
+    role: str = Field(default="user", pattern="^(user|admin|orderer)$")
     member_id: Optional[int] = None
 
 
@@ -61,7 +61,7 @@ class UserUpdate(BaseModel):
     date_of_birth: Optional[date] = None
     avatar_url: Optional[str] = None
     member_id: Optional[int] = None
-    role: Optional[str] = Field(None, pattern="^(user|admin)$")  # admin only
+    role: Optional[str] = Field(None, pattern="^(user|admin|orderer)$")  # admin only
 
 
 class ChangePasswordRequest(BaseModel):
@@ -170,6 +170,10 @@ class DailyOrderLinksUpdate(BaseModel):
 
 class DailyOrderFinalize(BaseModel):
     total_bill: int = Field(..., ge=0)
+    # Người trả tiền quán: được cộng payer_amount vào deposit.
+    # None = admin trả (không cộng). Bỏ trống cả hai field = giữ nguyên lần chốt trước.
+    payer_member_id: Optional[int] = None
+    payer_amount: Optional[int] = Field(None, ge=0)
 
 
 class OrderItemInOrder(BaseModel):
@@ -203,6 +207,9 @@ class DailyOrderResponse(BaseModel):
     note: Optional[str] = None
     created_by: Optional[int] = None
     created_at: datetime
+    payer_member_id: Optional[int] = None
+    payer_name: Optional[str] = None
+    payer_amount: int = 0
     items: list[OrderItemInOrder] = []
     eater_count: int = 0
 
@@ -301,7 +308,7 @@ class DepositResponse(BaseModel):
     amount: int
     note: Optional[str] = None
     status: str  # pending | approved
-    type: str = "deposit"  # deposit | charge
+    type: str = "deposit"  # deposit | charge | order_payment
     created_at: datetime
 
     model_config = {"from_attributes": True}

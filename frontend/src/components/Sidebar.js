@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { getUser, isAdmin, clearAuth } from '@/lib/auth';
+import { getUser, isAdmin, clearAuth, roleLabel } from '@/lib/auth';
 import { getInitials } from '@/lib/api';
 
 export default function Sidebar({ isOpen, onClose }) {
@@ -89,7 +89,7 @@ export default function Sidebar({ isOpen, onClose }) {
           </div>
               <div className="user-details">
                 <div className="user-name">{user.full_name}</div>
-                <div className="user-role">{user.role === 'admin' ? '👑 Admin' : '👤 User'}</div>
+                <div className="user-role">{roleLabel(user.role)}</div>
               </div>
             </div>
           )}

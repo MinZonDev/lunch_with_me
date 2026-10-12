@@ -148,6 +148,25 @@ export const reviewsAPI = {
 };
 
 // ============== Helpers ==============
+// How each deposits-collection row looks and which way it moves the balance.
+export function txnMeta(type, status) {
+  switch (type) {
+    case 'charge':
+      return { icon: '📤', label: 'Khoản chi', sign: '−', color: '#ff6b6b', badge: '📤 Đã trừ' };
+    case 'order_payment':
+      return { icon: '🛵', label: 'Trả tiền quán', sign: '+', color: '#06d6a0', badge: '🛵 Đã cộng' };
+    case 'spending':
+      return { icon: '🍽️', label: 'Tiền ăn', sign: '−', color: '#ff6b6b' };
+    default:
+      return {
+        icon: '💵',
+        label: status === 'pending' ? '⏳ Yêu cầu nạp tiền' : 'Nạp tiền',
+        sign: '+',
+        color: '#06d6a0',
+      };
+  }
+}
+
 // Mirrors backend cost_calculator: exceptions pay their fixed amount, the rest
 // (minus extras) is split evenly among regular eaters, rounded up.
 export function previewSplit(bill, eaters) {

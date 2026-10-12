@@ -1,5 +1,7 @@
 'use client';
 
+import { ROLE_LABELS, roleLabel } from '@/lib/auth';
+
 import { useState, useEffect, useCallback } from 'react';
 import { authAPI, membersAPI } from '@/lib/api';
 import { useToast } from '@/components/Toast';
@@ -132,7 +134,7 @@ export default function UsersPage() {
                   <td style={{ fontWeight: '600' }}>{u.full_name}</td>
                   <td style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{u.username}</td>
                   <td style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{u.email}</td>
-                  <td><span className={`badge ${u.role === 'admin' ? 'badge-open' : ''}`}>{u.role === 'admin' ? '👑 Admin' : '👤 User'}</span></td>
+                  <td><span className={`badge ${u.role !== 'user' ? 'badge-open' : ''}`}>{roleLabel(u.role)}</span></td>
                   <td style={{ color: 'var(--text-muted)' }}>{members.find(m => m.id === u.member_id)?.name || '—'}</td>
                   <td>
                     {u.is_active
@@ -197,8 +199,9 @@ export default function UsersPage() {
             <div className="form-group">
               <label className="form-label">Role</label>
               <select className="form-select" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
-                <option value="user">👤 User</option>
-                <option value="admin">👑 Admin</option>
+                {Object.entries(ROLE_LABELS).reverse().map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
               </select>
             </div>
             <div className="form-group">

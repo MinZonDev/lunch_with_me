@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { authAPI, getInitials } from '@/lib/api';
-import { getUser, setAuth, getToken } from '@/lib/auth';
+import { getUser, setAuth, getToken, roleLabel } from '@/lib/auth';
 import { useToast } from '@/components/Toast';
 
 export default function ProfilePage() {
@@ -139,7 +139,7 @@ export default function ProfilePage() {
             <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>{displayName}</div>
             <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem', fontFamily: 'monospace' }}>@{user.username}</div>
             <span className="badge" style={{ marginTop: '6px', display: 'inline-block' }}>
-              {user.role === 'admin' ? '👑 Admin' : '👤 User'}
+              {roleLabel(user.role)}
             </span>
           </div>
           <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '8px' }}>

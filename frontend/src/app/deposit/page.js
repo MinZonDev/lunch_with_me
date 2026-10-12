@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { depositsAPI, membersAPI, formatMoney } from '@/lib/api';
+import { depositsAPI, membersAPI, formatMoney, txnMeta } from '@/lib/api';
 import { isAdmin, getUser } from '@/lib/auth';
 import { useToast } from '@/components/Toast';
 
@@ -375,9 +375,11 @@ export default function DepositPage() {
                         onChange={e => setEditAmount(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && handleSaveTxn()}
                         style={{ width: 90, padding: '4px 8px' }} autoFocus />
-                    ) : d.type === 'charge'
-                      ? <span style={{ color: '#ff6b6b', fontWeight: '700' }}>−{formatMoney(d.amount)}</span>
-                      : <span style={{ color: 'var(--status-success)', fontWeight: '700' }}>+{formatMoney(d.amount)}</span>}
+                    ) : (
+                      <span style={{ color: txnMeta(d.type, d.status).color, fontWeight: '700' }}>
+                        {txnMeta(d.type, d.status).sign}{formatMoney(d.amount)}
+                      </span>
+                    )}
                   </td>
                   <td style={{ color: 'var(--text-secondary)' }}>
                     {editingTxn === d.id ? (
@@ -387,13 +389,13 @@ export default function DepositPage() {
                         placeholder="Ghi chú" style={{ minWidth: 120, padding: '4px 8px' }} />
                     ) : (
                       <>
-                        {d.type === 'charge' && <span style={{ color: '#ff6b6b', fontSize: '0.8rem', marginRight: '4px' }}>📤</span>}
+                        {d.type !== 'deposit' && <span style={{ fontSize: '0.8rem', marginRight: '4px' }}>{txnMeta(d.type, d.status).icon}</span>}
                         {d.note || '—'}
                       </>
                     )}
                   </td>
-                  <td>{d.type === 'charge'
-                    ? <span className="badge" style={{ background: 'rgba(255,107,107,0.12)', color: '#ff6b6b', border: '1px solid rgba(255,107,107,0.3)' }}>📤 Đã trừ</span>
+                  <td>{txnMeta(d.type, d.status).badge
+                    ? <span className="badge" style={{ color: txnMeta(d.type, d.status).color, border: `1px solid ${txnMeta(d.type, d.status).color}` }}>{txnMeta(d.type, d.status).badge}</span>
                     : <StatusBadge status={d.status} />}
                   </td>
                   {admin && (
@@ -633,9 +635,7 @@ export default function DepositPage() {
                   {detailData.transactions.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>Chưa có giao dịch</div>
                   ) : detailData.transactions.map((txn, idx) => {
-                    const isDeposit = txn.type === 'deposit';
-                    const isCharge = txn.type === 'charge';
-                    const isSpending = txn.type === 'spending';
+                    const meta = txnMeta(txn.type, txn.status);
                     const isPending = txn.status === 'pending';
                     return (
                       <div key={idx} style={{
@@ -647,13 +647,13 @@ export default function DepositPage() {
                           width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           fontSize: '0.9rem',
-                          background: isDeposit ? 'rgba(6,214,160,0.12)' : isCharge ? 'rgba(255,107,107,0.12)' : 'rgba(255,140,66,0.12)',
+                          background: meta.sign === '+' ? 'rgba(6,214,160,0.12)' : 'rgba(255,107,107,0.12)',
                         }}>
-                          {isDeposit ? '💵' : isCharge ? '📤' : '🍽️'}
+                          {meta.icon}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: '0.85rem', fontWeight: 500 }}>
-                            {isDeposit ? (isPending ? '⏳ Yêu cầu nạp tiền' : 'Nạp tiền') : isCharge ? 'Khoản chi' : 'Tiền ăn'}
+                            {meta.label}
                             {txn.description && <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: '6px' }}>· {txn.description}</span>}
                           </div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
@@ -665,9 +665,9 @@ export default function DepositPage() {
                         <div style={{ textAlign: 'right', flexShrink: 0 }}>
                           <div style={{
                             fontWeight: 700, fontSize: '0.9rem',
-                            color: isDeposit ? '#06d6a0' : '#ff6b6b',
+                            color: meta.color,
                           }}>
-                            {isDeposit ? '+' : '−'}{formatMoney(txn.amount)}
+                            {meta.sign}{formatMoney(txn.amount)}
                           </div>
                           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                             Dư: <BalanceDisplay balance={txn.running_balance} />

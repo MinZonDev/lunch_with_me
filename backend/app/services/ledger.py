@@ -20,6 +20,9 @@ def classify_txn(txn: dict) -> tuple[str, int]:
     amount = txn.get("amount", 0) or 0
     if ttype == "deposit":
         return ("deposited", amount) if txn.get("status") == "approved" else ("ignored", 0)
+    if ttype == "order_payment":
+        # Member paid the restaurant out of pocket for an order: counts as money in
+        return "deposited", amount
     if ttype == "charge":
         return "charged", amount
     return "ignored", 0

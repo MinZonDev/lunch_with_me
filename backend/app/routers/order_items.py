@@ -7,7 +7,7 @@ from app.database import get_db, _next_id, _to_ns, _doc_ns
 from app.schemas import (
     OrderItemCreate, OrderItemUpdate, OrderItemExtraUpdate, OrderItemExceptionUpdate, OrderItemResponse,
 )
-from app.core.auth import get_current_user, get_current_admin
+from app.core.auth import get_current_user, get_current_admin, get_order_manager
 from app.services.delegation import has_active_delegation
 from app.services.ledger import member_names
 
@@ -206,7 +206,7 @@ def update_item_exception(
     item_id: int,
     data: OrderItemExceptionUpdate,
     db=Depends(get_db),
-    _=Depends(get_current_admin),
+    _=Depends(get_order_manager),
 ):
     """Đánh dấu ngoại lệ: người này trả đúng số tiền riêng, phần còn lại chia cho người khác."""
     ref = db.collection("order_items").document(str(item_id))

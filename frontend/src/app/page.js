@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ordersAPI, orderItemsAPI, membersAPI, restaurantsAPI, delegationsAPI, formatMoney, getInitials, getTodayString } from '@/lib/api';
 import { useToast } from '@/components/Toast';
-import { isAdmin, getUser } from '@/lib/auth';
+import { isAdmin, getUser, canManageOrders } from '@/lib/auth';
 import { useOrderRealtime } from '@/lib/useOrderRealtime';
 import logger from '@/lib/logger';
 import Link from 'next/link';
@@ -45,6 +45,7 @@ export default function HomePage() {
   const [submittingDish, setSubmittingDish] = useState(false);
   const addToast = useToast();
   const admin = isAdmin();
+  const manager = canManageOrders();
   const currentUser = getUser();
 
   // Derive the currently-viewed order
@@ -237,7 +238,7 @@ export default function HomePage() {
           <div className="empty-icon">🍱</div>
           <h3>Chưa có order hôm nay</h3>
           <p>Tạo order mới để team bắt đầu chọn món!</p>
-          {admin && (
+          {manager && (
             <button className="btn btn-primary btn-lg mt-24" onClick={openCreateModal}>
               ✨ Tạo Order Hôm Nay
             </button>
@@ -269,7 +270,7 @@ export default function HomePage() {
               </span>
             )}
             {todayOrder && <Link href={`/order/${todayOrder.id}`} className="btn btn-secondary btn-sm">Chi tiết →</Link>}
-            {admin && (
+            {manager && (
               <button className="btn btn-primary btn-sm" onClick={openCreateModal}>＋ Menu</button>
             )}
           </div>

@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback, use } from 'react';
+import { useState, useEffect, useCallback, useRef, use } from 'react';
 import { ordersAPI, orderItemsAPI, membersAPI, formatMoney, getInitials, formatDate, previewSplit } from '@/lib/api';
-import { isAdmin, getUser } from '@/lib/auth';
+import { isAdmin, getUser, canManageOrders } from '@/lib/auth';
 import { useToast } from '@/components/Toast';
 import { useOrderRealtime } from '@/lib/useOrderRealtime';
 import Link from 'next/link';
@@ -13,6 +13,12 @@ export default function OrderDetailPage({ params }) {
   const orderId = resolvedParams.id;
   const [order, setOrder] = useState(null);
   const [memberUsernameMap, setMemberUsernameMap] = useState({});
+  const [members, setMembers] = useState([]);
+  // Người trả tiền quán: '' = admin trả (không cộng deposit)
+  const [payerId, setPayerId] = useState('');
+  const [payerAmount, setPayerAmount] = useState('');
+  const [payerAmountTouched, setPayerAmountTouched] = useState(false);
+  const payerInitialized = useRef(false);
   const [loading, setLoading] = useState(true);
   const [totalBill, setTotalBill] = useState('');
   const [editingExtra, setEditingExtra] = useState(null);
@@ -32,7 +38,22 @@ export default function OrderDetailPage({ params }) {
   const [beChecked, setBeChecked] = useState(new Set());
   const addToast = useToast();
   const admin = isAdmin();
+  const manager = canManageOrders();
   const currentUser = getUser();
+
+  // Default payer: whoever paid last time, else the person finalizing (admins have no deposit)
+  const resetPayer = useCallback((o) => {
+    if (o.payer_member_id != null) {
+      setPayerId(String(o.payer_member_id));
+    } else if (o.status === 'finalized' || currentUser?.role === 'admin' || !currentUser?.member_id) {
+      setPayerId('');
+    } else {
+      setPayerId(String(currentUser.member_id));
+    }
+    const custom = o.payer_member_id != null && o.payer_amount !== o.total_bill;
+    setPayerAmountTouched(custom);
+    setPayerAmount(custom ? String(o.payer_amount) : '');
+  }, [currentUser?.role, currentUser?.member_id]);
 
   const fetchOrder = useCallback(async () => {
     try {
@@ -41,6 +62,11 @@ export default function OrderDetailPage({ params }) {
         membersAPI.list().catch(() => []),
       ]);
       setOrder(data);
+      setMembers(membersList);
+      if (!payerInitialized.current) {
+        resetPayer(data);
+        payerInitialized.current = true;
+      }
       if (data.total_bill) setTotalBill(data.total_bill.toString());
       setMemberUsernameMap(
         Object.fromEntries(membersList.filter(m => m.username).map(m => [m.id, m.username]))
@@ -50,9 +76,14 @@ export default function OrderDetailPage({ params }) {
     } finally {
       setLoading(false);
     }
-  }, [orderId, addToast]);
+  }, [orderId, addToast, resetPayer]);
 
   useEffect(() => { fetchOrder(); }, [fetchOrder]);
+
+  const payerPayload = (bill) => ({
+    payer_member_id: payerId ? Number(payerId) : null,
+    payer_amount: payerId ? (payerAmountTouched ? (parseInt(payerAmount) || 0) : bill) : null,
+  });
 
   useEffect(() => {
     if (!orderId) return;
@@ -120,7 +151,7 @@ export default function OrderDetailPage({ params }) {
     if (!confirm(`Chốt bill ${formatMoney(bill)} đ cho ${eaters.length} người ăn (~${formatMoney(perPerson)} đ/người)?`)) return;
     setSubmitting(true);
     try {
-      await ordersAPI.finalize(orderId, { total_bill: bill });
+      await ordersAPI.finalize(orderId, { total_bill: bill, ...payerPayload(bill) });
       addToast('Đã chốt order! 🎉');
       fetchOrder();
     } catch (err) {
@@ -161,7 +192,7 @@ export default function OrderDetailPage({ params }) {
     }
     setSubmitting(true);
     try {
-      await ordersAPI.finalize(orderId, { total_bill: bill });
+      await ordersAPI.finalize(orderId, { total_bill: bill, ...payerPayload(bill) });
       addToast('Đã cập nhật bill & chia lại tiền!');
       setEditingBill(false);
       fetchOrder();
@@ -243,6 +274,39 @@ export default function OrderDetailPage({ params }) {
     );
   }
 
+
+  const payerFields = (bill) => (
+    <div className="flex gap-8" style={{ flexWrap: 'wrap', marginTop: 12 }}>
+      <div style={{ flex: '2', minWidth: 180 }}>
+        <label className="form-label">Người trả tiền quán</label>
+        <select className="form-select" value={payerId} onChange={(e) => setPayerId(e.target.value)}>
+          <option value="">👑 Admin (không cộng deposit)</option>
+          {members.map(m => (
+            <option key={m.id} value={m.id}>{m.name}</option>
+          ))}
+        </select>
+      </div>
+      {payerId && (
+        <div style={{ flex: '1', minWidth: 120 }}>
+          <label className="form-label">Số tiền cộng (k)</label>
+          <input
+            type="number"
+            className="form-input"
+            value={payerAmountTouched ? payerAmount : (bill > 0 ? String(bill) : '')}
+            placeholder="= tổng bill"
+            onChange={(e) => { setPayerAmount(e.target.value); setPayerAmountTouched(true); }}
+          />
+        </div>
+      )}
+      {payerId && (
+        <p style={{ flex: '1 1 100%', fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>
+          Sẽ cộng vào deposit của {members.find(m => String(m.id) === payerId)?.name || '?'} với ghi chú
+          &quot;Đặt cơm ngày {order.order_date.split('-').reverse().join('-')}&quot;.
+        </p>
+      )}
+    </div>
+  );
+
   const eatingItems = order.items.filter((i) => i.is_eating);
   const notEatingItems = order.items.filter((i) => !i.is_eating);
   const isFinalized = order.status === 'finalized';
@@ -290,10 +354,10 @@ export default function OrderDetailPage({ params }) {
             {order.status === 'open' ? '🟢 Đang mở' :
               order.status === 'locked' ? '🟡 Đã khóa' : '🔴 Đã chốt'}
           </span>
-          {order.status === 'open' && (
+          {manager && order.status === 'open' && (
             <button className="btn btn-secondary btn-sm" onClick={handleLock}>🔒 Khóa order</button>
           )}
-          {order.status === 'locked' && (
+          {manager && order.status === 'locked' && (
             <button className="btn btn-secondary btn-sm" onClick={handleReopen}>🔓 Mở lại</button>
           )}
           {admin && isFinalized && (
@@ -342,7 +406,7 @@ export default function OrderDetailPage({ params }) {
       <div className="card mb-24">
         <div className="flex items-center justify-between" style={{ marginBottom: '12px' }}>
           <div className="card-title" style={{ margin: 0 }}>🔗 Link Đặt Món</div>
-          {admin && !editingLinks && (
+          {manager && !editingLinks && (
             <button className="btn btn-ghost btn-sm" onClick={openLinksEditor}>✏️ Sửa</button>
           )}
         </div>
@@ -388,7 +452,7 @@ export default function OrderDetailPage({ params }) {
           </div>
         ) : (
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>
-            Chưa có link đặt món.{admin ? ' Bấm ✏️ Sửa để thêm.' : ''}
+            Chưa có link đặt món.{manager ? ' Bấm ✏️ Sửa để thêm.' : ''}
           </p>
         )}
       </div>
@@ -504,7 +568,7 @@ export default function OrderDetailPage({ params }) {
                       <div style={{
                         display: 'flex', alignItems: 'center', gap: 10,
                         padding: '10px 14px',
-                        borderBottom: idx < items.length - 1 || (admin && (editingExtra === item.id || editingException === item.id)) ? '1px solid var(--border-subtle)' : 'none',
+                        borderBottom: idx < items.length - 1 || ((admin && editingExtra === item.id) || (manager && editingException === item.id)) ? '1px solid var(--border-subtle)' : 'none',
                         opacity: beChecked.has(item.id) ? 0.5 : 1,
                         transition: 'opacity 0.15s',
                         background: beChecked.has(item.id) ? 'var(--bg-subtle)' : 'transparent',
@@ -544,7 +608,7 @@ export default function OrderDetailPage({ params }) {
                             title={isFinalized ? 'Sửa món thêm (sẽ chia lại tiền)' : 'Set món thêm'}
                           >{isFinalized ? '✏️' : '➕'}</button>
                         )}
-                        {admin && (
+                        {manager && (
                           <button
                             className="btn btn-ghost btn-sm"
                             onClick={() => openExceptionEditor(item)}
@@ -564,7 +628,7 @@ export default function OrderDetailPage({ params }) {
                           <button className="btn btn-ghost btn-sm" onClick={() => setEditingExtra(null)}>✕</button>
                         </div>
                       )}
-                      {admin && editingException === item.id && (
+                      {manager && editingException === item.id && (
                         <div className="flex gap-8 items-center" style={{ padding: '10px 14px', flexWrap: 'wrap', borderBottom: idx < items.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}>
                           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', flex: '1 1 100%' }}>
                             Ngoại lệ: {item.member_name} trả đúng số tiền này, không chia đều bill.
@@ -603,7 +667,7 @@ export default function OrderDetailPage({ params }) {
       )}
 
       {/* Finalize Section */}
-      {admin && !isFinalized && eatingItems.length > 0 && (
+      {manager && !isFinalized && eatingItems.length > 0 && (
         <div className="finalize-section">
           <h3>💰 Chốt Bill</h3>
           <p className="text-muted mb-16" style={{ fontSize: '0.85rem' }}>
@@ -625,6 +689,7 @@ export default function OrderDetailPage({ params }) {
                 {eatingItems.length > 0 && ` · ~${formatMoney(previewSplit(parseInt(totalBill), eatingItems).perPerson)} đ/người`}
               </p>
             )}
+            {payerFields(parseInt(totalBill) || 0)}
           </div>
           <button className="btn btn-primary btn-lg w-full" onClick={handleFinalize} disabled={submitting}>
             {submitting ? '⏳ Đang chốt...' : '🎉 Chốt Order & Chia Tiền'}
@@ -637,15 +702,15 @@ export default function OrderDetailPage({ params }) {
         <div className="cost-breakdown">
           <div className="flex items-center justify-between mb-16">
             <div className="card-title" style={{ margin: 0 }}>📊 Chi Tiết Chia Tiền</div>
-            {admin && !editingBill && (
+            {manager && !editingBill && (
               <button
                 className="btn btn-ghost btn-sm"
-                onClick={() => { setNewBill(order.total_bill ? order.total_bill.toString() : ''); setEditingBill(true); }}
+                onClick={() => { setNewBill(order.total_bill ? order.total_bill.toString() : ''); resetPayer(order); setEditingBill(true); }}
               >✏️ Cập nhật bill</button>
             )}
           </div>
 
-          {admin && editingBill && (
+          {manager && editingBill && (
             <div className="mb-16">
               <div className="flex gap-8" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
                 <input
@@ -668,6 +733,7 @@ export default function OrderDetailPage({ params }) {
                   = <strong style={{ color: 'var(--accent-primary)' }}>{formatMoney(parseInt(newBill))} đ</strong>
                 </p>
               )}
+              {payerFields(parseInt(newBill) || 0)}
             </div>
           )}
 
@@ -692,6 +758,12 @@ export default function OrderDetailPage({ params }) {
             <span className="font-bold text-accent">{formatMoney(order.shared_cost_per_person)}/người</span>
           </div>
 
+          {order.payer_member_id != null && order.payer_amount > 0 && (
+            <div className="cost-row">
+              <span className="text-muted">🛵 {order.payer_name} trả quán → cộng deposit</span>
+              <span style={{ color: '#06d6a0' }}>+{formatMoney(order.payer_amount)}</span>
+            </div>
+          )}
           <div className="cost-row" style={{ borderTop: '2px solid var(--border-medium)', paddingTop: '16px', marginTop: '8px' }}>
             <span>Tổng</span>
             <span className="font-bold text-accent" style={{ fontSize: '1.2rem' }}>

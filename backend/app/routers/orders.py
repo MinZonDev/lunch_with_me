@@ -68,6 +68,8 @@ def _build_order_response(order, items) -> DailyOrderResponse:
             is_eating=item.is_eating,
             extra_item_description=getattr(item, "extra_item_description", None),
             extra_item_cost=getattr(item, "extra_item_cost", 0) or 0,
+            is_exception=getattr(item, "is_exception", False) or False,
+            exception_amount=getattr(item, "exception_amount", 0) or 0,
             total_cost=getattr(item, "total_cost", 0) or 0,
         ))
         if item.is_eating:
@@ -103,6 +105,34 @@ def _get_order_by_id(db, order_id: int):
         return None, None
     doc = results[0]
     return doc.reference, _to_ns(doc.to_dict())
+
+
+def recalculate_costs(db, ref, order, extra_updates: dict | None = None) -> None:
+    """Split order.total_bill among its items and persist the result.
+
+    Shared by finalize and by edits made after finalizing (extras, exceptions).
+    Raises 400 when the bill cannot be split (e.g. exceptions exceed the bill).
+    """
+    items = [SimpleNamespace(**s.to_dict()) for s in
+             db.collection("order_items").where("daily_order_id", "==", order.id).stream()]
+    try:
+        cost_result = calculate_costs(order, items)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    ref.update({
+        "total_bill": order.total_bill,
+        "shared_cost_per_person": cost_result["shared_cost_per_person"],
+        **(extra_updates or {}),
+    })
+
+    cost_map = {c["item_id"]: c["total_cost"] for c in cost_result["item_costs"]}
+    if items:
+        batch = db.batch()
+        for item in items:
+            item_ref = db.collection("order_items").document(str(item.id))
+            batch.update(item_ref, {"total_cost": cost_map.get(item.id, 0)})
+        batch.commit()
 
 
 @router.get("", response_model=list[DailyOrderListResponse])
@@ -295,25 +325,7 @@ def finalize_order(order_id: int, data: DailyOrderFinalize, db=Depends(get_db), 
         raise HTTPException(status_code=404, detail="Order not found")
 
     order.total_bill = data.total_bill
-
-    items = _load_items_with_names(db, order_id)
-    cost_result = calculate_costs(order, items)
-
-    # Update order
-    ref.update({
-        "total_bill": data.total_bill,
-        "status": "finalized",
-        "shared_cost_per_person": cost_result["shared_cost_per_person"],
-    })
-
-    # Update item costs in batch
-    cost_map = {c["item_id"]: c["total_cost"] for c in cost_result["item_costs"]}
-    if cost_map:
-        batch = db.batch()
-        for item in items:
-            item_ref = db.collection("order_items").document(str(item.id))
-            batch.update(item_ref, {"total_cost": cost_map.get(item.id, 0)})
-        batch.commit()
+    recalculate_costs(db, ref, order, {"status": "finalized"})
 
     order = _to_ns(ref.get().to_dict())
     items = _load_items_with_names(db, order_id)

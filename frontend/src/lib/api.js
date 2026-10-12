@@ -92,6 +92,7 @@ export const orderItemsAPI = {
   create: (orderId, data) => fetchAPI(`/api/orders/${orderId}/items`, { method: 'POST', body: JSON.stringify(data) }),
   update: (orderId, itemId, data) => fetchAPI(`/api/orders/${orderId}/items/${itemId}`, { method: 'PUT', body: JSON.stringify(data) }),
   updateExtra: (orderId, itemId, data) => fetchAPI(`/api/orders/${orderId}/items/${itemId}/extra`, { method: 'PUT', body: JSON.stringify(data) }),
+  updateException: (orderId, itemId, data) => fetchAPI(`/api/orders/${orderId}/items/${itemId}/exception`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (orderId, itemId) => fetchAPI(`/api/orders/${orderId}/items/${itemId}`, { method: 'DELETE' }),
 };
 
@@ -142,6 +143,17 @@ export const reviewsAPI = {
 };
 
 // ============== Helpers ==============
+// Mirrors backend cost_calculator: exceptions pay their fixed amount, the rest
+// (minus extras) is split evenly among regular eaters, rounded up.
+export function previewSplit(bill, eaters) {
+  const exceptions = eaters.filter(i => i.is_exception);
+  const regulars = eaters.filter(i => !i.is_exception);
+  const exceptionTotal = exceptions.reduce((s, i) => s + (i.exception_amount || 0), 0);
+  const extraTotal = regulars.reduce((s, i) => s + (i.extra_item_cost || 0), 0);
+  const perPerson = regulars.length > 0 ? Math.ceil((bill - exceptionTotal - extraTotal) / regulars.length) : 0;
+  return { perPerson, regularCount: regulars.length, overBill: exceptionTotal > bill };
+}
+
 export function formatMoney(amount) {
   if (amount === null || amount === undefined) return '0';
   return (Number(amount) * 1000).toLocaleString('vi-VN');

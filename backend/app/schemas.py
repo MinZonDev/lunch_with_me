@@ -181,6 +181,8 @@ class OrderItemInOrder(BaseModel):
     is_eating: bool
     extra_item_description: Optional[str] = None
     extra_item_cost: int
+    is_exception: bool = False
+    exception_amount: int = 0
     total_cost: int
 
     model_config = {"from_attributes": True}
@@ -238,6 +240,12 @@ class OrderItemExtraUpdate(BaseModel):
     extra_item_cost: int = Field(default=0, ge=0)
 
 
+class OrderItemExceptionUpdate(BaseModel):
+    """Ngoại lệ: người này trả đúng exception_amount, không chia đều bill."""
+    is_exception: bool
+    exception_amount: int = Field(default=0, ge=0)
+
+
 class OrderItemResponse(BaseModel):
     id: int
     daily_order_id: int
@@ -248,6 +256,8 @@ class OrderItemResponse(BaseModel):
     is_eating: bool
     extra_item_description: Optional[str] = None
     extra_item_cost: int
+    is_exception: bool = False
+    exception_amount: int = 0
     total_cost: int
     created_at: datetime
 

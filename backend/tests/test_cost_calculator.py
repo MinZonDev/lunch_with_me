@@ -235,3 +235,45 @@ class TestCalculateCosts:
         result = calculate_costs(order, items)
         eating_costs = sum(c["total_cost"] for c in result["item_costs"])
         assert eating_costs == 50
+
+
+class TestExceptions:
+    """Ngoại lệ: trả đúng số tiền riêng, phần còn lại chia cho người thường."""
+
+    def _exc(self, id, member_id, amount):
+        item = _make_item(id, member_id, True)
+        item.is_exception = True
+        item.exception_amount = amount
+        return item
+
+    def _costs(self, result):
+        return {c["member_id"]: c["total_cost"] for c in result["item_costs"]}
+
+    def test_exception_removed_from_split(self):
+        """Bill 93, cơm trắng 3k: 90 chia 3 người còn lại = 30."""
+        items = [_make_item(1, 1, True), _make_item(2, 2, True), _make_item(3, 3, True),
+                 self._exc(4, 4, 3)]
+        result = calculate_costs(_make_order(93), items)
+        assert self._costs(result) == {1: 30, 2: 30, 3: 30, 4: 3}
+        assert result["shared_cost_per_person"] == 30
+
+    def test_exception_with_extras_and_rounding(self):
+        items = [_make_item(1, 1, True, extra=5), _make_item(2, 2, True), self._exc(3, 3, 3)]
+        result = calculate_costs(_make_order(100), items)
+        # remaining 97 - extra 5 = 92 → 46 each
+        assert self._costs(result) == {1: 51, 2: 46, 3: 3}
+
+    def test_exception_ignores_own_extra(self):
+        exc = self._exc(2, 2, 10)
+        exc.extra_item_cost = 99
+        result = calculate_costs(_make_order(50), [_make_item(1, 1, True), exc])
+        assert self._costs(result) == {1: 40, 2: 10}
+
+    def test_all_exceptions(self):
+        result = calculate_costs(_make_order(20), [self._exc(1, 1, 3), self._exc(2, 2, 17)])
+        assert self._costs(result) == {1: 3, 2: 17}
+        assert result["shared_cost_per_person"] == 0
+
+    def test_exceptions_exceeding_bill_rejected(self):
+        with pytest.raises(ValueError):
+            calculate_costs(_make_order(10), [_make_item(1, 1, True), self._exc(2, 2, 11)])

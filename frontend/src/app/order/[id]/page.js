@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, use } from 'react';
-import { ordersAPI, orderItemsAPI, membersAPI, formatMoney, getInitials, formatDate } from '@/lib/api';
+import { ordersAPI, orderItemsAPI, membersAPI, formatMoney, getInitials, formatDate, previewSplit } from '@/lib/api';
 import { isAdmin, getUser } from '@/lib/auth';
 import { useToast } from '@/components/Toast';
 import { useOrderRealtime } from '@/lib/useOrderRealtime';
@@ -18,6 +18,8 @@ export default function OrderDetailPage({ params }) {
   const [editingExtra, setEditingExtra] = useState(null);
   const [extraDesc, setExtraDesc] = useState('');
   const [extraCost, setExtraCost] = useState('');
+  const [editingException, setEditingException] = useState(null);
+  const [exceptionAmount, setExceptionAmount] = useState('');
   const [editingLinks, setEditingLinks] = useState(false);
   const [linksDraft, setLinksDraft] = useState([]);
   const [editingBill, setEditingBill] = useState(false);
@@ -110,8 +112,11 @@ export default function OrderDetailPage({ params }) {
       return;
     }
     const eaters = order.items.filter(i => i.is_eating);
-    const totalExtra = eaters.reduce((s, i) => s + (i.extra_item_cost || 0), 0);
-    const perPerson = eaters.length > 0 ? Math.ceil((bill - totalExtra) / eaters.length) : 0;
+    const { perPerson, overBill } = previewSplit(bill, eaters);
+    if (overBill) {
+      addToast('Tổng tiền ngoại lệ lớn hơn tổng bill!', 'error');
+      return;
+    }
     if (!confirm(`Chốt bill ${formatMoney(bill)} đ cho ${eaters.length} người ăn (~${formatMoney(perPerson)} đ/người)?`)) return;
     setSubmitting(true);
     try {
@@ -190,15 +195,34 @@ export default function OrderDetailPage({ params }) {
         extra_item_description: extraDesc || null,
         extra_item_cost: parseInt(extraCost) || 0,
       });
-      if (order.status === 'finalized') {
-        await ordersAPI.finalize(orderId, { total_bill: order.total_bill });
-        addToast('Đã cập nhật món thêm & chia lại tiền');
-      } else {
-        addToast('Đã cập nhật món thêm');
-      }
+      addToast(order.status === 'finalized' ? 'Đã cập nhật món thêm & chia lại tiền' : 'Đã cập nhật món thêm');
       setEditingExtra(null);
       setExtraDesc('');
       setExtraCost('');
+      fetchOrder();
+    } catch (err) {
+      addToast(err.message, 'error');
+    }
+  };
+
+  const openExceptionEditor = (item) => {
+    setEditingExtra(null);
+    setEditingException(item.id);
+    setExceptionAmount(item.is_exception ? item.exception_amount.toString() : '');
+  };
+
+  const handleSaveException = async (itemId, isException) => {
+    const amount = parseInt(exceptionAmount) || 0;
+    if (isException && amount <= 0) {
+      addToast('Nhập số tiền ngoại lệ!', 'error');
+      return;
+    }
+    try {
+      await orderItemsAPI.updateException(orderId, itemId, { is_exception: isException, exception_amount: amount });
+      const suffix = order.status === 'finalized' ? ' & chia lại tiền' : '';
+      addToast((isException ? 'Đã đặt ngoại lệ' : 'Đã bỏ ngoại lệ') + suffix);
+      setEditingException(null);
+      setExceptionAmount('');
       fetchOrder();
     } catch (err) {
       addToast(err.message, 'error');
@@ -480,7 +504,7 @@ export default function OrderDetailPage({ params }) {
                       <div style={{
                         display: 'flex', alignItems: 'center', gap: 10,
                         padding: '10px 14px',
-                        borderBottom: idx < items.length - 1 || (admin && editingExtra === item.id) ? '1px solid var(--border-subtle)' : 'none',
+                        borderBottom: idx < items.length - 1 || (admin && (editingExtra === item.id || editingException === item.id)) ? '1px solid var(--border-subtle)' : 'none',
                         opacity: beChecked.has(item.id) ? 0.5 : 1,
                         transition: 'opacity 0.15s',
                         background: beChecked.has(item.id) ? 'var(--bg-subtle)' : 'transparent',
@@ -501,9 +525,14 @@ export default function OrderDetailPage({ params }) {
                           {item.note && (
                             <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginLeft: 8, fontStyle: 'italic' }}>📝 {item.note}</span>
                           )}
-                          {item.extra_item_description && (
+                          {item.extra_item_description && !item.is_exception && (
                             <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginLeft: 8 }}>
                               + {item.extra_item_description} ({formatMoney(item.extra_item_cost)})
+                            </span>
+                          )}
+                          {item.is_exception && (
+                            <span className="badge" style={{ marginLeft: 8, fontSize: '0.7rem', background: 'transparent', color: 'var(--accent-primary)', border: '1px solid var(--accent-primary)' }}>
+                              Ngoại lệ · {formatMoney(item.exception_amount)}
                             </span>
                           )}
                         </div>
@@ -511,9 +540,17 @@ export default function OrderDetailPage({ params }) {
                         {admin && (
                           <button
                             className="btn btn-ghost btn-sm"
-                            onClick={() => { setEditingExtra(item.id); setExtraDesc(item.extra_item_description || ''); setExtraCost(item.extra_item_cost ? item.extra_item_cost.toString() : ''); }}
+                            onClick={() => { setEditingException(null); setEditingExtra(item.id); setExtraDesc(item.extra_item_description || ''); setExtraCost(item.extra_item_cost ? item.extra_item_cost.toString() : ''); }}
                             title={isFinalized ? 'Sửa món thêm (sẽ chia lại tiền)' : 'Set món thêm'}
                           >{isFinalized ? '✏️' : '➕'}</button>
+                        )}
+                        {admin && (
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => openExceptionEditor(item)}
+                            title="Ngoại lệ: trả giá riêng, không chia đều bill"
+                            style={item.is_exception ? { color: 'var(--accent-primary)' } : undefined}
+                          >⚖️</button>
                         )}
                         {canCancel && (admin || item.member_id === currentUser?.member_id) && (
                           <button className="btn btn-ghost btn-sm" style={{ color: 'var(--status-finalized)' }} onClick={() => handleCancelItem(item.id)} title="Hủy món">✕</button>
@@ -525,6 +562,19 @@ export default function OrderDetailPage({ params }) {
                           <input type="number" className="form-input" placeholder="Giá (k)" value={extraCost} onChange={(e) => setExtraCost(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSaveExtra(item.id)} style={{ width: '100px' }} />
                           <button className="btn btn-primary btn-sm" onClick={() => handleSaveExtra(item.id)}>💾</button>
                           <button className="btn btn-ghost btn-sm" onClick={() => setEditingExtra(null)}>✕</button>
+                        </div>
+                      )}
+                      {admin && editingException === item.id && (
+                        <div className="flex gap-8 items-center" style={{ padding: '10px 14px', flexWrap: 'wrap', borderBottom: idx < items.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', flex: '1 1 100%' }}>
+                            Ngoại lệ: {item.member_name} trả đúng số tiền này, không chia đều bill.
+                          </span>
+                          <input type="number" className="form-input" placeholder="Số tiền (k)" value={exceptionAmount} onChange={(e) => setExceptionAmount(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSaveException(item.id, true)} style={{ width: '120px' }} autoFocus />
+                          <button className="btn btn-primary btn-sm" onClick={() => handleSaveException(item.id, true)}>💾 Đặt ngoại lệ</button>
+                          {item.is_exception && (
+                            <button className="btn btn-secondary btn-sm" onClick={() => handleSaveException(item.id, false)}>Bỏ ngoại lệ</button>
+                          )}
+                          <button className="btn btn-ghost btn-sm" onClick={() => setEditingException(null)}>✕</button>
                         </div>
                       )}
                     </div>
@@ -572,7 +622,7 @@ export default function OrderDetailPage({ params }) {
             {parseInt(totalBill) > 0 && (
               <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '6px 0 0' }}>
                 = <strong style={{ color: 'var(--accent-primary)' }}>{formatMoney(parseInt(totalBill))} đ</strong>
-                {eatingItems.length > 0 && ` · ~${formatMoney(Math.ceil((parseInt(totalBill) - eatingItems.reduce((s, i) => s + (i.extra_item_cost || 0), 0)) / eatingItems.length))} đ/người`}
+                {eatingItems.length > 0 && ` · ~${formatMoney(previewSplit(parseInt(totalBill), eatingItems).perPerson)} đ/người`}
               </p>
             )}
           </div>
@@ -625,14 +675,20 @@ export default function OrderDetailPage({ params }) {
             <span className="text-muted">Tổng bill</span>
             <span className="font-bold">{formatMoney(order.total_bill)}</span>
           </div>
-          {eatingItems.filter(i => i.extra_item_cost > 0).map(item => (
+          {eatingItems.filter(i => i.is_exception).map(item => (
+            <div key={item.id} className="cost-row">
+              <span className="text-muted">Ngoại lệ: {item.member_name}</span>
+              <span style={{ color: 'var(--status-finalized)' }}>-{formatMoney(item.exception_amount)}</span>
+            </div>
+          ))}
+          {eatingItems.filter(i => !i.is_exception && i.extra_item_cost > 0).map(item => (
             <div key={item.id} className="cost-row">
               <span className="text-muted">Trừ: {item.member_name} ({item.extra_item_description})</span>
               <span style={{ color: 'var(--status-finalized)' }}>-{formatMoney(item.extra_item_cost)}</span>
             </div>
           ))}
           <div className="cost-row">
-            <span className="text-muted">Chia đều cho {eatingItems.length} người</span>
+            <span className="text-muted">Chia đều cho {eatingItems.filter(i => !i.is_exception).length} người</span>
             <span className="font-bold text-accent">{formatMoney(order.shared_cost_per_person)}/người</span>
           </div>
 

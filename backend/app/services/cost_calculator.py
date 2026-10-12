@@ -9,6 +9,10 @@ Logic:
 5. Each person pays the same base + own extra_item_cost
    Everyone pays equally; sum(payments) may exceed total_bill
    by up to (n - 1) due to rounding up.
+
+Exceptions (is_exception=True): the member ordered something with its own
+price (e.g. plain rice 3k). They pay exactly exception_amount, which is taken
+out of the bill before the rest is split among the regular eaters.
 """
 import math
 
@@ -41,6 +45,8 @@ def calculate_costs(daily_order, items: list) -> dict:
     Works with SimpleNamespace objects or any object with the expected attributes.
     """
     eaters = [item for item in items if item.is_eating]
+    exceptions = [i for i in eaters if getattr(i, "is_exception", False)]
+    regulars = [i for i in eaters if not getattr(i, "is_exception", False)]
 
     result = {
         "shared_cost_per_person": 0,
@@ -50,13 +56,23 @@ def calculate_costs(daily_order, items: list) -> dict:
     total_bill = getattr(daily_order, "total_bill", 0) or 0
 
     if eaters and total_bill > 0:
-        user_dicts = [{"extra_item_cost": getattr(i, "extra_item_cost", 0) or 0} for i in eaters]
-        total_extra = sum(d["extra_item_cost"] for d in user_dicts)
-        shared_base = total_bill - total_extra
-        result["shared_cost_per_person"] = math.ceil(shared_base / len(eaters))
-        payments = _split_bill(total_bill, user_dicts)
-        for item, amount in zip(eaters, payments):
+        exception_total = 0
+        for item in exceptions:
+            amount = getattr(item, "exception_amount", 0) or 0
+            exception_total += amount
             result["item_costs"].append({"item_id": item.id, "member_id": item.member_id, "total_cost": amount})
+        if exception_total > total_bill:
+            raise ValueError("Tổng tiền ngoại lệ lớn hơn tổng bill")
+
+        if regulars:
+            remaining_bill = total_bill - exception_total
+            user_dicts = [{"extra_item_cost": getattr(i, "extra_item_cost", 0) or 0} for i in regulars]
+            total_extra = sum(d["extra_item_cost"] for d in user_dicts)
+            shared_base = remaining_bill - total_extra
+            result["shared_cost_per_person"] = math.ceil(shared_base / len(regulars))
+            payments = _split_bill(remaining_bill, user_dicts)
+            for item, amount in zip(regulars, payments):
+                result["item_costs"].append({"item_id": item.id, "member_id": item.member_id, "total_cost": amount})
 
     for item in items:
         if not item.is_eating:

@@ -172,3 +172,65 @@ class TestOrderCrud:
                          json={"links": [{"label": "Quán A", "url": "https://a.example"}]})
         assert res.status_code == 200
         assert res.json()["links"] == [{"label": "Quán A", "url": "https://a.example"}]
+
+
+class TestExceptionItems:
+    def _setup(self, client, db, admin, user):
+        seed_member(db, 3, "Chi")
+        order = _create_order(client, admin)
+        oid = order["id"]
+        for mid, dish in ((1, "Gà"), (2, "Bò"), (3, "Cơm trắng")):
+            client.post(f"/api/orders/{oid}/items", headers=admin["headers"],
+                        json={"member_id": mid, "dish_name": dish})
+        body = client.get(f"/api/orders/{oid}", headers=admin["headers"]).json()
+        return oid, _item_of(body, 3)["id"]
+
+    def test_exception_before_finalize(self, client, db, admin, user):
+        oid, item_id = self._setup(client, db, admin, user)
+        res = client.put(f"/api/orders/{oid}/items/{item_id}/exception", headers=admin["headers"],
+                         json={"is_exception": True, "exception_amount": 3})
+        assert res.status_code == 200
+        assert res.json()["is_exception"] is True and res.json()["exception_amount"] == 3
+
+        body = client.post(f"/api/orders/{oid}/finalize", headers=admin["headers"],
+                           json={"total_bill": 103}).json()
+        assert {i["member_id"]: i["total_cost"] for i in body["items"]} == {1: 50, 2: 50, 3: 3}
+        assert body["shared_cost_per_person"] == 50
+
+    def test_exception_after_finalize_resplits(self, client, db, admin, user):
+        oid, item_id = self._setup(client, db, admin, user)
+        client.post(f"/api/orders/{oid}/finalize", headers=admin["headers"], json={"total_bill": 90})
+        client.put(f"/api/orders/{oid}/items/{item_id}/exception", headers=admin["headers"],
+                   json={"is_exception": True, "exception_amount": 4})
+        body = client.get(f"/api/orders/{oid}", headers=admin["headers"]).json()
+        assert {i["member_id"]: i["total_cost"] for i in body["items"]} == {1: 43, 2: 43, 3: 4}
+
+        # Bỏ ngoại lệ → chia đều lại
+        client.put(f"/api/orders/{oid}/items/{item_id}/exception", headers=admin["headers"],
+                   json={"is_exception": False})
+        body = client.get(f"/api/orders/{oid}", headers=admin["headers"]).json()
+        assert {i["member_id"]: i["total_cost"] for i in body["items"]} == {1: 30, 2: 30, 3: 30}
+        assert _item_of(body, 3)["exception_amount"] == 0
+
+    def test_exception_exceeding_bill_rejected_and_rolled_back(self, client, db, admin, user):
+        oid, item_id = self._setup(client, db, admin, user)
+        client.post(f"/api/orders/{oid}/finalize", headers=admin["headers"], json={"total_bill": 90})
+        res = client.put(f"/api/orders/{oid}/items/{item_id}/exception", headers=admin["headers"],
+                         json={"is_exception": True, "exception_amount": 200})
+        assert res.status_code == 400
+        body = client.get(f"/api/orders/{oid}", headers=admin["headers"]).json()
+        assert _item_of(body, 3)["is_exception"] is False
+
+    def test_exception_requires_admin(self, client, db, admin, user):
+        oid, item_id = self._setup(client, db, admin, user)
+        res = client.put(f"/api/orders/{oid}/items/{item_id}/exception", headers=user["headers"],
+                         json={"is_exception": True, "exception_amount": 3})
+        assert res.status_code == 403
+
+    def test_extra_after_finalize_resplits_server_side(self, client, db, admin, user):
+        oid, item_id = self._setup(client, db, admin, user)
+        client.post(f"/api/orders/{oid}/finalize", headers=admin["headers"], json={"total_bill": 90})
+        client.put(f"/api/orders/{oid}/items/{item_id}/extra", headers=admin["headers"],
+                   json={"extra_item_description": "Trà", "extra_item_cost": 6})
+        body = client.get(f"/api/orders/{oid}", headers=admin["headers"]).json()
+        assert {i["member_id"]: i["total_cost"] for i in body["items"]} == {1: 28, 2: 28, 3: 34}

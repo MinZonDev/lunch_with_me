@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from app.database import get_db, _next_id, _to_ns, _doc_ns
 from app.schemas import (
-    OrderItemCreate, OrderItemUpdate, OrderItemExtraUpdate, OrderItemResponse,
+    OrderItemCreate, OrderItemUpdate, OrderItemExtraUpdate, OrderItemExceptionUpdate, OrderItemResponse,
 )
 from app.core.auth import get_current_user, get_current_admin
 from app.services.delegation import has_active_delegation
@@ -36,6 +36,8 @@ def _item_response(item, member_name: str) -> OrderItemResponse:
         is_eating=item.is_eating,
         extra_item_description=getattr(item, "extra_item_description", None),
         extra_item_cost=getattr(item, "extra_item_cost", 0) or 0,
+        is_exception=getattr(item, "is_exception", False) or False,
+        exception_amount=getattr(item, "exception_amount", 0) or 0,
         total_cost=getattr(item, "total_cost", 0) or 0,
         created_at=item.created_at,
     )
@@ -199,10 +201,48 @@ def update_item_extra(
         "extra_item_cost": data.extra_item_cost,
     }
     ref.update(updates)
-    d = {**doc.to_dict(), **updates}
-    member_name = _get_member_name(db, d["member_id"])
     logger.info("Admin set extra for item %d: %s (%dk)", item_id, data.extra_item_description, data.extra_item_cost)
-    return _item_response(SimpleNamespace(**d), member_name)
+    return _after_cost_edit(db, order_id, ref)
+
+
+@router.put("/{item_id}/exception", response_model=OrderItemResponse)
+def update_item_exception(
+    order_id: int,
+    item_id: int,
+    data: OrderItemExceptionUpdate,
+    db=Depends(get_db),
+    _=Depends(get_current_admin),
+):
+    """Đánh dấu ngoại lệ: người này trả đúng số tiền riêng, phần còn lại chia cho người khác."""
+    ref = db.collection("order_items").document(str(item_id))
+    doc = ref.get()
+    if not doc.exists or doc.to_dict().get("daily_order_id") != order_id:
+        raise HTTPException(status_code=404, detail="Order item not found")
+    if data.is_exception and not doc.to_dict().get("is_eating"):
+        raise HTTPException(status_code=400, detail="Thành viên này chưa đặt món")
+
+    ref.update({
+        "is_exception": data.is_exception,
+        "exception_amount": data.exception_amount if data.is_exception else 0,
+    })
+    logger.info("Set exception for item %d: %s (%dk)", item_id, data.is_exception, data.exception_amount)
+    return _after_cost_edit(db, order_id, ref, rollback=doc.to_dict())
+
+
+def _after_cost_edit(db, order_id: int, item_ref, rollback: dict | None = None) -> OrderItemResponse:
+    """Re-split the bill if the order is already finalized, then return the fresh item."""
+    from app.routers.orders import recalculate_costs
+
+    order_ref, order = _get_order_ns(db, order_id)
+    if order and order.status == "finalized":
+        try:
+            recalculate_costs(db, order_ref, order)
+        except HTTPException:
+            if rollback is not None:
+                item_ref.update({k: rollback.get(k) for k in ("is_exception", "exception_amount")})
+            raise
+    d = item_ref.get().to_dict()
+    return _item_response(SimpleNamespace(**d), _get_member_name(db, d["member_id"]))
 
 
 @router.delete("/{item_id}", status_code=204)
@@ -231,5 +271,7 @@ def cancel_item(
         "is_eating": False,
         "extra_item_description": None,
         "extra_item_cost": 0,
+        "is_exception": False,
+        "exception_amount": 0,
     })
     logger.info("Cancelled item %d in order %d", item_id, order_id)

@@ -19,6 +19,11 @@ logger = logging.getLogger("lwm.main")
 async def lifespan(app: FastAPI):
     logger.info("Starting Lunch With Me API...")
     init_db()
+    from app.core.config import settings
+    if not settings.enable_scheduler:
+        logger.warning("Scheduler disabled (ENABLE_SCHEDULER=false)")
+        yield
+        return
     try:
         from app.services.scheduler import start_scheduler, stop_scheduler
         start_scheduler()

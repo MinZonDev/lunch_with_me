@@ -10,6 +10,9 @@ def setup_logging(level: str = "INFO") -> None:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
+    # Windows consoles/redirects default to cp1252, which can't encode the "→" in request logs
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
 

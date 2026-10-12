@@ -35,5 +35,9 @@ class Settings:
     low_balance_threshold: int = int(os.getenv("LOW_BALANCE_THRESHOLD", "50"))
     order_deadline_default: str = os.getenv("ORDER_DEADLINE_DEFAULT", "11:30")
 
+    # Background jobs (reminders, auto-lock, pickup random). Turn off when a local
+    # backend points at the production project so it doesn't email real users.
+    enable_scheduler: bool = os.getenv("ENABLE_SCHEDULER", "true").lower() not in ("0", "false", "no")
+
 
 settings = Settings()

@@ -76,16 +76,6 @@ def _job_auto_lock_past_deadline():
         print(f"[Scheduler] Auto-locked {locked} expired orders")
 
 
-def _job_pickup():
-    from app.database import init_db, get_db
-    from app.services.pickup import run_due
-
-    init_db()
-    picked = run_due(get_db())
-    if picked:
-        print(f"[Scheduler] Picked food collectors for {picked} order(s)")
-
-
 def _job_monthly_statement():
     from app.database import init_db, get_db
     from app.services.email_service import send_monthly_statement
@@ -193,50 +183,21 @@ _DAY_MAP = {"mon": "mon", "tue": "tue", "wed": "wed", "thu": "thu", "fri": "fri"
 
 
 def reschedule_debt_reminder(cfg):
-    """Dynamically reschedule or remove the debt reminder job based on settings."""
-    job_id = "debt_reminder"
-    try:
-        _scheduler.remove_job(job_id)
-    except Exception:
-        pass
+    """Kept for callers; the tick reads the debt reminder settings every minute."""
 
-    if not cfg.enabled:
-        print("[Scheduler] Debt reminder disabled")
-        return
 
-    h, m = map(int, cfg.time.split(":"))
+def _job_tick():
+    from app.database import init_db, get_db
+    from app.services.cron import run_tick
 
-    if cfg.schedule == "daily":
-        trigger = CronTrigger(hour=h, minute=m, timezone=VN_TZ)
-    elif cfg.schedule == "weekly":
-        trigger = CronTrigger(day_of_week=_DAY_MAP.get(cfg.day_of_week, "mon"), hour=h, minute=m, timezone=VN_TZ)
-    else:  # biweekly — approximate with every 2 weeks via week parameter
-        trigger = CronTrigger(day_of_week=_DAY_MAP.get(cfg.day_of_week, "mon"), week="*/2", hour=h, minute=m, timezone=VN_TZ)
-
-    _scheduler.add_job(_job_debt_reminder, trigger, id=job_id)
-    print(f"[Scheduler] Debt reminder scheduled: {cfg.schedule} {cfg.day_of_week} {cfg.time}")
+    init_db()
+    run_tick(get_db())
 
 
 def start_scheduler():
-    _scheduler.add_job(_job_auto_lock_past_deadline, CronTrigger(hour=12, minute=5, timezone=VN_TZ), id="auto_lock")
-    _scheduler.add_job(_job_monthly_statement, CronTrigger(day=1, hour=8, timezone=VN_TZ), id="monthly_statement")
-    # Random người lấy cơm right after each order's deadline (cheap: reads today's orders only)
-    _scheduler.add_job(_job_pickup, CronTrigger(hour="6-22", minute="*", timezone=VN_TZ),
-                       id="pickup", max_instances=1, coalesce=True)
-
-    # Load debt reminder settings from Firestore on startup
-    try:
-        from app.database import init_db, get_db
-        init_db()
-        db = get_db()
-        doc = db.document("_settings/debt_reminder").get()
-        if doc.exists:
-            from app.routers.reminders import ReminderSettings
-            cfg = ReminderSettings(**doc.to_dict())
-            reschedule_debt_reminder(cfg)
-    except Exception as e:
-        print(f"[Scheduler] Could not load debt reminder settings: {e}")
-
+    """In-process mode (local / VPS): same once-a-minute tick Cloud Scheduler drives on Cloud Run."""
+    _scheduler.add_job(_job_tick, CronTrigger(minute="*", timezone=VN_TZ),
+                       id="tick", max_instances=1, coalesce=True)
     _scheduler.start()
     print("[Scheduler] Started")
 

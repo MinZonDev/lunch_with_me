@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from google.cloud.firestore import Query as FsQuery
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
@@ -463,7 +463,6 @@ def finalize_order(order_id: int, data: DailyOrderFinalize, db=Depends(get_db), 
 @router.post("/{order_id}/pickup", response_model=DailyOrderResponse)
 def reroll_pickup(
     order_id: int,
-    background: BackgroundTasks,
     count: int | None = Query(default=None, ge=1, le=10),
     db=Depends(get_db),
     _=Depends(get_order_manager),
@@ -479,7 +478,7 @@ def reroll_pickup(
     picked = pickup.pick(db, ref, reroll=True)
     if not picked:
         raise HTTPException(status_code=400, detail="Chưa có ai đặt món để chọn người lấy cơm")
-    background.add_task(pickup.notify, db, picked)
+    pickup.notify(db, picked)  # inline: Cloud Run throttles CPU after the response
     items = _load_items_with_names(db, order_id)
     return _build_order_response(_to_ns(ref.get().to_dict()), items)
 

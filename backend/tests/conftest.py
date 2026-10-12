@@ -171,6 +171,10 @@ class FakeFirestore:
     def batch(self):
         return FakeBatch()
 
+    def document(self, path):
+        col, doc_id = path.split("/", 1)
+        return FakeDocRef(self, col, doc_id)
+
     def get_all(self, refs, field_paths=None, transaction=None):
         return iter([ref.get() for ref in refs])
 

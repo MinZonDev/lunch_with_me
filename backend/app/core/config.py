@@ -38,6 +38,8 @@ class Settings:
     # Background jobs (reminders, auto-lock, pickup random). Turn off when a local
     # backend points at the production project so it doesn't email real users.
     enable_scheduler: bool = os.getenv("ENABLE_SCHEDULER", "true").lower() not in ("0", "false", "no")
+    # Shared secret for POST /api/internal/cron/tick (Cloud Scheduler). Empty = endpoint disabled.
+    cron_secret: str = os.getenv("CRON_SECRET", "")
 
 
 settings = Settings()

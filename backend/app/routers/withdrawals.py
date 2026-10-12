@@ -11,7 +11,7 @@ are never deleted on cancel/reject — only their status changes.
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.auth import get_current_admin, get_current_user
 from app.core.config import settings
@@ -113,7 +113,6 @@ def list_withdrawals(
 @router.post("", response_model=WithdrawalResponse, status_code=201)
 def create_withdrawal(
     data: WithdrawalCreate,
-    background: BackgroundTasks,
     db=Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -148,7 +147,7 @@ def create_withdrawal(
     logger.info("Member %s requested withdrawal %s (%sk)", mid, wid, data.amount)
 
     name = member_names(db, [mid]).get(mid, "?")
-    background.add_task(_notify_admins, db, d, name)
+    _notify_admins(db, d, name)
     return _response(d, name)
 
 
@@ -168,7 +167,6 @@ def cancel_withdrawal(withdrawal_id: int, db=Depends(get_db), current_user=Depen
 def reject_withdrawal(
     withdrawal_id: int,
     data: WithdrawalReject,
-    background: BackgroundTasks,
     db=Depends(get_db),
     admin=Depends(get_current_admin),
 ):
@@ -182,14 +180,13 @@ def reject_withdrawal(
     }
     ref.update(updates)
     d.update(updates)
-    background.add_task(_notify_member, db, d, False)
+    _notify_member(db, d, False)
     return _response(d, member_names(db, [d["member_id"]]).get(d["member_id"], "?"))
 
 
 @router.post("/{withdrawal_id}/complete", response_model=WithdrawalResponse)
 def complete_withdrawal(
     withdrawal_id: int,
-    background: BackgroundTasks,
     db=Depends(get_db),
     admin=Depends(get_current_admin),
 ):
@@ -207,5 +204,5 @@ def complete_withdrawal(
     ref.update(updates)
     d.update(updates)
     logger.info("Admin %s completed withdrawal %s", admin.id, withdrawal_id)
-    background.add_task(_notify_member, db, d, True)
+    _notify_member(db, d, True)
     return _response(d, member_names(db, [d["member_id"]]).get(d["member_id"], "?"))

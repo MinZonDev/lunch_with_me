@@ -108,10 +108,8 @@ def get_settings(db=Depends(get_db), _=Depends(get_current_admin)):
 
 @router.put("/settings", response_model=ReminderSettings)
 def update_settings(data: ReminderSettings, db=Depends(get_db), _=Depends(get_current_admin)):
+    # The cron tick reads these settings every minute, so changes apply right away
     db.document(_SETTINGS_DOC).set(data.model_dump())
-    # Reschedule the APScheduler job immediately
-    from app.services.scheduler import reschedule_debt_reminder
-    reschedule_debt_reminder(data)
     return data
 
 

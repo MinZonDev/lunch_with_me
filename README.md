@@ -162,7 +162,7 @@ Tài khoản admin mặc định sau khi chạy `seed.py`:
 | `SMTP_PASSWORD` | App Password của Gmail (không phải mật khẩu thường) | |
 | `FRONTEND_URL` | URL frontend — dùng cho link reset mật khẩu (mặc định: `http://localhost:3000`) | |
 | `LOW_BALANCE_THRESHOLD` | Ngưỡng cảnh báo số dư thấp, đơn vị nghìn đồng (mặc định: `50`) | |
-| `ORDER_DEADLINE_DEFAULT` | Giờ khoá order mặc định (mặc định: `11:30`) | |
+| `ORDER_DEADLINE_DEFAULT` | Giờ khoá order mặc định (mặc định: `11:00`) | |
 
 **Cấu hình Gmail App Password:**
 1. Bật 2-Step Verification trên tài khoản Google

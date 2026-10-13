@@ -38,9 +38,9 @@ export default function HomePage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [restaurants, setRestaurants] = useState([]);
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
-  const [deadlineTime, setDeadlineTime] = useState('11:30');
+  const [deadlineTime, setDeadlineTime] = useState('11:00');
   const [pickupCount, setPickupCount] = useState('1');
-  const [allowRandom, setAllowRandom] = useState(false);
+  const [allowRandom, setAllowRandom] = useState(true);
   const [dishesText, setDishesText] = useState('');
   const [showRandom, setShowRandom] = useState(false);
   const [menuName, setMenuName] = useState('');
@@ -127,7 +127,7 @@ export default function HomePage() {
 
   const openCreateModal = async () => {
     setMenuName('');
-    setAllowRandom(false);
+    setAllowRandom(true);
     setDishesText('');
     setShowCreateModal(true);
     try {
@@ -149,7 +149,7 @@ export default function HomePage() {
         order_date: getTodayString(),
         name: menuName.trim() || null,
         restaurant_id: selectedRestaurant || null,
-        deadline_time: deadlineTime || '11:30',
+        deadline_time: deadlineTime || '11:00',
         pickup_count: Math.min(Math.max(parseInt(pickupCount) || 1, 1), 10),
       });
       setShowCreateModal(false);

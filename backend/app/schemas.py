@@ -177,7 +177,7 @@ class DailyOrderCreate(BaseModel):
     note: Optional[str] = None
     created_by: Optional[int] = None
     pickup_count: int = Field(default=1, ge=1, le=10)  # số người lấy cơm random khi hết deadline
-    allow_random: bool = False                          # cho phép random món
+    allow_random: bool = True                           # cho phép random món
     dishes: Optional[list[Dish]] = Field(None, max_length=300)  # danh sách món khi quán không có Be menu
 
 

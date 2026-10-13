@@ -56,8 +56,11 @@ class TestCreate:
         assert body == {"source": "order", "items": [
             {"name": "Cơm gà xối mỡ", "price": 35.0, "category": None, "image": None}]}
 
-    def test_random_off_by_default(self, client, admin, user):
-        order = _create(client, admin["headers"])
+    def test_random_on_by_default(self, client, admin, user):
+        assert _create(client, admin["headers"])["allow_random"] is True
+
+    def test_random_can_be_turned_off(self, client, admin, user):
+        order = _create(client, admin["headers"], allow_random=False)
         assert order["allow_random"] is False
         res = client.get(f"/api/orders/{order['id']}/dishes", headers=user["headers"])
         assert res.status_code == 400

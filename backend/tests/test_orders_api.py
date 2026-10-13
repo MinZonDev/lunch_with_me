@@ -298,3 +298,9 @@ class TestMonthlyReport:
         assert body["grand_total"] == 30
         assert [d["eater_count"] for d in body["days"]] == [1]
         assert body["members"] == [{"member_id": 2, "member_name": "Bình", "days_eaten": 1, "total_cost": 30}]
+
+
+def test_default_deadline_is_11am(client, admin):
+    order = _create_order(client, admin)
+    # 11:00 VN (UTC+7) → 04:00 UTC
+    assert order["order_deadline"].startswith("2026-07-10T04:00")

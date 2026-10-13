@@ -105,6 +105,8 @@ export const ordersAPI = {
   reopen: (id) => fetchAPI(`/api/orders/${id}/reopen`, { method: 'POST' }),
   finalize: (id, data) => fetchAPI(`/api/orders/${id}/finalize`, { method: 'POST', body: JSON.stringify(data) }),
   updateLinks: (id, links) => fetchAPI(`/api/orders/${id}/links`, { method: 'PUT', body: JSON.stringify({ links }) }),
+  dishes: (id) => fetchAPI(`/api/orders/${id}/dishes`),
+  updateRandom: (id, data) => fetchAPI(`/api/orders/${id}/random`, { method: 'PUT', body: JSON.stringify(data) }),
   pickup: (id, count = null) => fetchAPI(`/api/orders/${id}/pickup${count ? `?count=${count}` : ''}`, { method: 'POST' }),
 };
 

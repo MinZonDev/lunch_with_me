@@ -21,6 +21,7 @@ def _res(ns) -> RestaurantResponse:
         be_lat=getattr(ns, "be_lat", None),
         be_lon=getattr(ns, "be_lon", None),
         menu_images=[MenuImage(**img) for img in (getattr(ns, "menu_images", None) or [])],
+        dishes=getattr(ns, "dishes", None) or [],
         created_at=ns.created_at,
     )
 

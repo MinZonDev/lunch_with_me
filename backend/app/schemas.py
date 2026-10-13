@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, field_validator
 from datetime import date, datetime
 from typing import Optional
 
@@ -134,6 +134,20 @@ class MenuImage(BaseModel):
     path: str
 
 
+class Dish(BaseModel):
+    """Một món trong danh sách random. price tính bằng nghìn đồng (k)."""
+    name: str = Field(..., min_length=1, max_length=100)
+    price: Optional[float] = Field(None, ge=0, le=10000)
+
+    @field_validator("name")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Tên món không được trống")
+        return v
+
+
 class RestaurantResponse(BaseModel):
     id: int
     name: str
@@ -143,6 +157,7 @@ class RestaurantResponse(BaseModel):
     be_lat: Optional[float] = None
     be_lon: Optional[float] = None
     menu_images: list[MenuImage] = []
+    dishes: list[Dish] = []  # danh sách món admin nhập (dùng cho random khi quán không có Be menu)
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -162,6 +177,8 @@ class DailyOrderCreate(BaseModel):
     note: Optional[str] = None
     created_by: Optional[int] = None
     pickup_count: int = Field(default=1, ge=1, le=10)  # số người lấy cơm random khi hết deadline
+    allow_random: bool = False                          # cho phép random món
+    dishes: Optional[list[Dish]] = Field(None, max_length=300)  # danh sách món khi quán không có Be menu
 
 
 class DailyOrderUpdate(BaseModel):
@@ -222,6 +239,7 @@ class DailyOrderResponse(BaseModel):
     pickup_names: list[str] = []
     pickup_picked_at: Optional[datetime] = None
     menu_images: list[MenuImage] = []  # from the order's restaurant
+    allow_random: bool = False
     items: list[OrderItemInOrder] = []
     eater_count: int = 0
 
@@ -486,3 +504,22 @@ class WithdrawalResponse(BaseModel):
     reject_reason: Optional[str] = None
     created_at: datetime
     processed_at: Optional[datetime] = None
+
+
+# ============== Random dish Schemas ==============
+
+class RandomSettingsUpdate(BaseModel):
+    allow_random: bool
+    dishes: Optional[list[Dish]] = Field(None, max_length=300)  # None = giữ nguyên danh sách hiện có
+
+
+class DishItem(BaseModel):
+    name: str
+    price: Optional[float] = None  # nghìn đồng
+    category: Optional[str] = None
+    image: Optional[str] = None
+
+
+class DishListResponse(BaseModel):
+    source: str  # be | restaurant | order | none
+    items: list[DishItem]

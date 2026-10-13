@@ -6,6 +6,7 @@ import { isAdmin, getUser, canManageOrders } from '@/lib/auth';
 import { useToast } from '@/components/Toast';
 import PickupBanner from '@/components/PickupBanner';
 import { MenuGallery } from '@/components/MenuGallery';
+import { parseDishLines, formatDishLines } from '@/lib/randomDish';
 import { useOrderRealtime } from '@/lib/useOrderRealtime';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -27,6 +28,7 @@ export default function OrderDetailPage({ params }) {
   const [extraDesc, setExtraDesc] = useState('');
   const [extraCost, setExtraCost] = useState('');
   const [editingException, setEditingException] = useState(null);
+  const [dishEditor, setDishEditor] = useState(null); // null = closed, else { text, source }
   const [exceptionAmount, setExceptionAmount] = useState('');
   const [editingLinks, setEditingLinks] = useState(false);
   const [linksDraft, setLinksDraft] = useState([]);
@@ -233,6 +235,37 @@ export default function OrderDetailPage({ params }) {
       setExtraDesc('');
       setExtraCost('');
       fetchOrder();
+    } catch (err) {
+      addToast(err.message, 'error');
+    }
+  };
+
+  const handleToggleRandom = async (enabled) => {
+    try {
+      await ordersAPI.updateRandom(orderId, { allow_random: enabled });
+      addToast(enabled ? 'Đã bật random món' : 'Đã tắt random món');
+      fetchOrder();
+    } catch (err) {
+      addToast(err.message, 'error');
+    }
+  };
+
+  const openDishEditor = async () => {
+    try {
+      const r = await ordersAPI.dishes(orderId);
+      setDishEditor({ text: r.source === 'be' ? '' : formatDishLines(r.items), source: r.source });
+    } catch (err) {
+      addToast(err.message, 'error');
+    }
+  };
+
+  const handleSaveDishes = async () => {
+    const { dishes, errors } = parseDishLines(dishEditor.text);
+    if (errors.length) { addToast(errors[0], 'error'); return; }
+    try {
+      await ordersAPI.updateRandom(orderId, { allow_random: true, dishes });
+      addToast(`Đã lưu ${dishes.length} món`);
+      setDishEditor(null);
     } catch (err) {
       addToast(err.message, 'error');
     }
@@ -461,6 +494,39 @@ export default function OrderDetailPage({ params }) {
           </p>
         )}
       </div>
+
+      {manager && !isFinalized && (
+        <div className="card mb-24">
+          <div className="flex items-center gap-12" style={{ flexWrap: 'wrap' }}>
+            <label className="flex items-center gap-8" style={{ cursor: 'pointer', flex: 1 }}>
+              <input type="checkbox" checked={!!order.allow_random} onChange={e => handleToggleRandom(e.target.checked)} />
+              <span style={{ fontWeight: 600 }}>🎲 Cho phép random món</span>
+            </label>
+            {order.allow_random && !dishEditor && (
+              <button className="btn btn-ghost btn-sm" onClick={openDishEditor}>✏️ Danh sách món</button>
+            )}
+          </div>
+          {dishEditor && (
+            <div style={{ marginTop: 12 }}>
+              {dishEditor.source === 'be' && (
+                <p style={{ fontSize: '0.8rem', color: '#06d6a0', margin: '0 0 8px' }}>
+                  Quán đang dùng menu Be. Danh sách dưới đây chỉ dùng khi Be không truy cập được.
+                </p>
+              )}
+              <textarea className="form-input" rows={8} style={{ fontFamily: 'inherit' }}
+                placeholder={'Mỗi dòng một món, giá ở cuối (k):\nCơm gà xối mỡ 35\nCanh chua 15'}
+                value={dishEditor.text} onChange={e => setDishEditor(d => ({ ...d, text: e.target.value }))} />
+              <div className="flex gap-8 items-center mt-8">
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', flex: 1 }}>
+                  {(() => { const { dishes, errors } = parseDishLines(dishEditor.text); return errors.length ? `⚠️ ${errors[0]}` : `${dishes.length} món`; })()}
+                </span>
+                <button className="btn btn-ghost btn-sm" onClick={() => setDishEditor(null)}>Huỷ</button>
+                <button className="btn btn-primary btn-sm" onClick={handleSaveDishes}>💾 Lưu</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <MenuGallery images={order.menu_images} title={`🖼️ Menu ${order.restaurant_name || ''}`} />
 

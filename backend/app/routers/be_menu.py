@@ -58,6 +58,22 @@ def _get_be_token() -> str:
     return token
 
 
+_menu_cache: dict = {}  # be_id -> (expires_at, payload)
+_MENU_TTL = 600
+
+
+def fetch_be_menu(r: dict) -> dict:
+    """Menu of a restaurant doc with be_restaurant_id, cached for 10 minutes."""
+    be_id = r.get("be_restaurant_id")
+    now = datetime.now(timezone.utc).timestamp()
+    cached = _menu_cache.get(be_id)
+    if cached and cached[0] > now:
+        return cached[1]
+    payload = _fetch_be_menu_uncached(r)
+    _menu_cache[be_id] = (now + _MENU_TTL, payload)
+    return payload
+
+
 @router.get("/menu/{restaurant_id}")
 def get_be_menu(restaurant_id: int, db=Depends(get_db), _=Depends(get_current_user)):
     """Lấy danh sách món ăn từ Be cho một quán đã cấu hình be_restaurant_id."""
@@ -66,10 +82,13 @@ def get_be_menu(restaurant_id: int, db=Depends(get_db), _=Depends(get_current_us
         raise HTTPException(status_code=404, detail="Quán không tồn tại")
 
     r = doc.to_dict()
-    be_id = r.get("be_restaurant_id")
-    if not be_id:
+    if not r.get("be_restaurant_id"):
         raise HTTPException(status_code=404, detail="Quán chưa cấu hình Be restaurant ID")
+    return fetch_be_menu(r)
 
+
+def _fetch_be_menu_uncached(r: dict) -> dict:
+    be_id = r.get("be_restaurant_id")
     be_lat = r.get("be_lat") or 10.77253621500006
     be_lon = r.get("be_lon") or 106.69798153800008
 

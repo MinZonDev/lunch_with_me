@@ -10,6 +10,7 @@ from app.database import get_db, _next_id, _next_ids, _to_ns, _doc_ns
 from app.schemas import (
     DailyOrderCreate, DailyOrderUpdate, DailyOrderFinalize, DailyOrderLinksUpdate,
     DailyOrderResponse, DailyOrderListResponse, DailyOrderPage, DailyOrderStats,
+    RandomSettingsUpdate, DishItem, DishListResponse,
     OrderItemInOrder, OrderLinkItem,
 )
 from app.services.cost_calculator import calculate_costs
@@ -95,6 +96,7 @@ def _build_order_response(order, items) -> DailyOrderResponse:
         pickup_member_ids=getattr(order, "pickup_member_ids", None) or [],
         pickup_names=getattr(order, "pickup_names", None) or [],
         pickup_picked_at=getattr(order, "pickup_picked_at", None),
+        allow_random=getattr(order, "allow_random", False) or False,
         items=item_responses,
         eater_count=eater_count,
     )
@@ -328,8 +330,11 @@ def create_order(data: DailyOrderCreate, db=Depends(get_db), _=Depends(get_order
         "created_by": data.created_by,
         "created_at": now,
         "pickup_count": data.pickup_count,
+        "allow_random": data.allow_random,
     }
     db.collection("daily_orders").document(doc_id).set(order_data)
+    if data.dishes is not None:
+        _save_dishes(db, order_data, db.collection("daily_orders").document(doc_id), data.dishes)
 
     # Auto-create order items for all active members
     active_members = list(db.collection("members").where("is_active", "==", True).stream())
@@ -481,6 +486,70 @@ def reroll_pickup(
     pickup.notify(db, picked)  # inline: Cloud Run throttles CPU after the response
     items = _load_items_with_names(db, order_id)
     return _build_order_response(_to_ns(ref.get().to_dict()), items)
+
+
+def _save_dishes(db, order: dict, order_ref, dishes) -> None:
+    """Store the random-dish list on the order's restaurant (reused next time), or on the order itself."""
+    rows = [d.model_dump() for d in dishes]
+    rid = order.get("restaurant_id")
+    if rid:
+        r_ref = db.collection("restaurants").document(str(rid))
+        if r_ref.get().exists:
+            r_ref.update({"dishes": rows})
+            return
+    order_ref.update({"dishes": rows})
+
+
+@router.put("/{order_id}/random", response_model=DailyOrderResponse)
+def update_random_settings(
+    order_id: int, data: RandomSettingsUpdate, db=Depends(get_db), _=Depends(get_order_manager),
+):
+    """Bật/tắt random món và (tuỳ chọn) cập nhật danh sách món."""
+    ref, order = _get_order_by_id(db, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    ref.update({"allow_random": data.allow_random})
+    if data.dishes is not None:
+        _save_dishes(db, ref.get().to_dict(), ref, data.dishes)
+    items = _load_items_with_names(db, order_id)
+    return _with_menu_images(db, [_build_order_response(_to_ns(ref.get().to_dict()), items)])[0]
+
+
+@router.get("/{order_id}/dishes", response_model=DishListResponse)
+def list_dishes(order_id: int, db=Depends(get_db), _=Depends(get_current_user)):
+    """Danh sách món để random: Be menu của quán, hoặc danh sách admin nhập."""
+    from app.routers.be_menu import fetch_be_menu
+
+    _, order = _get_order_by_id(db, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if not getattr(order, "allow_random", False):
+        raise HTTPException(status_code=400, detail="Menu này không bật random món")
+
+    restaurant = None
+    rid = getattr(order, "restaurant_id", None)
+    if rid:
+        r_doc = db.collection("restaurants").document(str(rid)).get()
+        restaurant = r_doc.to_dict() if r_doc.exists else None
+
+    manual = (restaurant or {}).get("dishes") or []
+    if restaurant and restaurant.get("be_restaurant_id"):
+        try:
+            be = fetch_be_menu(restaurant)
+            items = [DishItem(name=i["name"], price=(i["price"] / 1000 if i.get("price") is not None else None),
+                              category=i.get("category"), image=i.get("image") or None)
+                     for i in be["items"]]
+            if items:
+                return DishListResponse(source="be", items=items)
+        except HTTPException:
+            if not manual:
+                raise  # Be down and nothing to fall back on
+    if manual:
+        return DishListResponse(source="restaurant", items=[DishItem(**d) for d in manual])
+    own = getattr(order, "dishes", None) or []
+    if own:
+        return DishListResponse(source="order", items=[DishItem(**d) for d in own])
+    return DishListResponse(source="none", items=[])
 
 
 @router.put("/{order_id}/links", response_model=DailyOrderResponse)

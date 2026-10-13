@@ -5,6 +5,8 @@ import { ordersAPI, orderItemsAPI, membersAPI, restaurantsAPI, delegationsAPI, f
 import { useToast } from '@/components/Toast';
 import PickupBanner from '@/components/PickupBanner';
 import { MenuGallery } from '@/components/MenuGallery';
+import RandomDishModal from '@/components/RandomDishModal';
+import { parseDishLines, formatDishLines } from '@/lib/randomDish';
 import { isAdmin, getUser, canManageOrders } from '@/lib/auth';
 import { useOrderRealtime } from '@/lib/useOrderRealtime';
 import logger from '@/lib/logger';
@@ -38,6 +40,9 @@ export default function HomePage() {
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
   const [deadlineTime, setDeadlineTime] = useState('11:30');
   const [pickupCount, setPickupCount] = useState('1');
+  const [allowRandom, setAllowRandom] = useState(false);
+  const [dishesText, setDishesText] = useState('');
+  const [showRandom, setShowRandom] = useState(false);
   const [menuName, setMenuName] = useState('');
   const [allowedMemberIds, setAllowedMemberIds] = useState(new Set());
   const [beMenu, setBeMenu] = useState(null);
@@ -115,20 +120,32 @@ export default function HomePage() {
       .finally(() => setBeMenuLoading(false));
   }, [todayOrders, activeOrderId, restaurants]);
 
+  const chooseRestaurant = (rid) => {
+    setSelectedRestaurant(rid);
+    setDishesText(formatDishLines(restaurants.find(r => r.id === rid)?.dishes));
+  };
+
   const openCreateModal = async () => {
     setMenuName('');
+    setAllowRandom(false);
+    setDishesText('');
     setShowCreateModal(true);
     try {
       const last = await restaurantsAPI.lastUsed();
-      if (last) setSelectedRestaurant(last.id);
+      if (last) chooseRestaurant(last.id);
     } catch {}
   };
 
   const handleCreateOrder = async () => {
     if (creating) return;
+    const needsDishList = allowRandom && !restaurants.find(r => r.id === selectedRestaurant)?.be_restaurant_id;
+    const { dishes, errors } = parseDishLines(dishesText);
+    if (needsDishList && errors.length) { addToast(errors[0], 'error'); return; }
     setCreating(true);
     try {
       const order = await ordersAPI.create({
+        allow_random: allowRandom,
+        ...(needsDishList && dishes.length ? { dishes } : {}),
         order_date: getTodayString(),
         name: menuName.trim() || null,
         restaurant_id: selectedRestaurant || null,
@@ -203,7 +220,7 @@ export default function HomePage() {
             <select
               className="form-select"
               value={selectedRestaurant || ''}
-              onChange={e => setSelectedRestaurant(e.target.value ? Number(e.target.value) : null)}
+              onChange={e => chooseRestaurant(e.target.value ? Number(e.target.value) : null)}
             >
               <option value="">— Chưa chọn quán —</option>
               {restaurants.map(r => (
@@ -226,6 +243,25 @@ export default function HomePage() {
           <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '6px 0 0' }}>
             Hết deadline hệ thống sẽ random trong số người đã đặt món và gửi mail cho mọi người.
           </p>
+        </div>
+        <div className="form-group">
+          <label className="flex items-center gap-8" style={{ cursor: 'pointer' }}>
+            <input type="checkbox" checked={allowRandom} onChange={e => setAllowRandom(e.target.checked)} />
+            <span className="form-label" style={{ margin: 0 }}>🎲 Cho phép random món</span>
+          </label>
+          {allowRandom && (restaurants.find(r => r.id === selectedRestaurant)?.be_restaurant_id ? (
+            <p style={{ fontSize: '0.78rem', color: '#06d6a0', margin: '6px 0 0' }}>Dùng danh sách món và giá từ menu Be của quán.</p>
+          ) : (
+            <>
+              <textarea className="form-input" rows={6} style={{ marginTop: 8, fontFamily: 'inherit' }}
+                placeholder={'Mỗi dòng một món, giá ở cuối (k):\nCơm gà xối mỡ 35\nCanh chua 15\nTrà đá 5'}
+                value={dishesText} onChange={e => setDishesText(e.target.value)} />
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '6px 0 0' }}>
+                {(() => { const { dishes, errors } = parseDishLines(dishesText); return errors.length ? `⚠️ ${errors[0]}` : `${dishes.length} món`; })()}
+                {selectedRestaurant ? ' · lưu vào quán để lần sau dùng lại' : ''}
+              </p>
+            </>
+          ))}
         </div>
         <div className="modal-actions">
           <button className="btn btn-secondary" onClick={() => setShowCreateModal(false)}>Hủy</button>
@@ -308,6 +344,14 @@ export default function HomePage() {
 
       {todayOrder && (
         <>
+          {showRandom && (
+            <RandomDishModal
+              orderId={todayOrder.id}
+              onClose={() => setShowRandom(false)}
+              onPick={(dish) => { setDishName(dish.name); setBeSearch(''); setShowRandom(false); addToast(`Đã chọn: ${dish.name}`); }}
+            />
+          )}
+
           <PickupBanner order={todayOrder} manager={manager} currentMemberId={currentUser?.member_id}
             onChanged={fetchData} addToast={addToast} />
 
@@ -420,6 +464,10 @@ export default function HomePage() {
                     Tên Món
                     {beMenuLoading && <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginLeft: 8, fontWeight: 400 }}>⏳ Đang tải menu...</span>}
                     {beMenu && !beMenuDismissed && <span style={{ color: '#06d6a0', fontSize: '0.75rem', marginLeft: 8, fontWeight: 400 }}>🛵 Be Menu</span>}
+                    {todayOrder.allow_random && (
+                      <button type="button" className="btn btn-secondary btn-sm" style={{ float: 'right', marginTop: -4 }}
+                        onClick={() => setShowRandom(true)}>🎲 Random món</button>
+                    )}
                   </label>
                   {beMenu && !beMenuDismissed ? (
                     <div>

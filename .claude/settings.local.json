@@ -18,7 +18,28 @@
       "Bash(git diff *)",
       "Bash(curl -s http://localhost:8001/api/health)",
       "Bash(gcloud run *)",
-      "Bash(gcloud builds submit *)"
+      "Bash(gcloud builds submit *)",
+      "PowerShell(gcloud run deploy lunch-with-me-f0e66 *)",
+      "PowerShell(Invoke-WebRequest -Uri \"https://lunch-with-me-f0e66-795555454507.asia-southeast1.run.app/docs\" -UseBasicParsing -Method Head | Select-Object -ExpandProperty StatusCode)",
+      "PowerShell(try { \\(Invoke-WebRequest -Uri \"http://localhost:8000/docs\" -UseBasicParsing -TimeoutSec 3\\).StatusCode } catch { \"Backend local KHONG chay: $\\($_.Exception.Message\\)\" })",
+      "PowerShell(Start-Sleep -Seconds 2; try { $r = Invoke-WebRequest -Uri \"http://localhost:8000/api/orders/today\" -UseBasicParsing -TimeoutSec 5 -Method Options -Headers @{ \"Origin\" = \"http://localhost:3001\"; \"Access-Control-Request-Method\" = \"GET\" }; \"Status: $\\($r.StatusCode\\)\"; \"Allow-Origin: $\\($r.Headers['Access-Control-Allow-Origin']\\)\" } catch { \"Loi: $\\($_.Exception.Message\\)\" })",
+      "PowerShell(python \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--PROJECT-LUNCH-WITH-ME-lunch-with-me\\\\d9b97e8e-c35b-49d1-b6a9-2038804347f1\\\\scratchpad\\\\e2e_test.py\")",
+      "PowerShell($r = Invoke-WebRequest -Uri \"https://lunch-with-me-f0e66-795555454507.asia-southeast1.run.app/docs\" -UseBasicParsing -Method Head; \"docs: $\\($r.StatusCode\\)\"; $spec = Invoke-RestMethod -Uri \"https://lunch-with-me-f0e66-795555454507.asia-southeast1.run.app/openapi.json\"; \"DELETE order endpoint: $\\($null -ne $spec.paths.'/api/orders/{order_id}'.delete\\)\"; \"PUT deposit endpoint: $\\($null -ne $spec.paths.'/api/deposits/{deposit_id}'.put\\)\")",
+      "Bash(git -C \"D:\\\\PROJECT\\\\LUNCH_WITH_ME\" log --oneline)",
+      "Bash(git check-ignore *)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(grep -iE \"serviceAccount|lunch\\\\.db|^\\\\.env$|/\\\\.env$\")",
+      "Bash(echo \"grep_exit=$?\")",
+      "Bash(npm run *)",
+      "Bash(docker version *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(gh run *)",
+      "PowerShell(gh run *)",
+      "Bash(curl -s \"https://api.github.com/repos/MinZonDev/lunch_with_me/actions/runs?per_page=5\")",
+      "Bash(pip show *)",
+      "Bash(grep -i \"serviceAccount\\\\|\\\\.db$\")"
     ]
   }
 }

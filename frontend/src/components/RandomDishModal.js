@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { ordersAPI, formatMoney } from '@/lib/api';
 import { filterDishes, pickRandom } from '@/lib/randomDish';
 
@@ -9,6 +9,8 @@ const MODES = [
   { id: 'price', label: '💰 Theo giá' },
   { id: 'text', label: '🔤 Theo chữ' },
 ];
+
+const SPIN_MS = 5000; // how long a random spin lasts
 
 const SOURCE_LABEL = { be: 'Menu Be', restaurant: 'Danh sách món của quán', order: 'Danh sách món của menu' };
 
@@ -40,22 +42,40 @@ export default function RandomDishModal({ orderId, onPick, onClose }) {
     [dishes, mode, min, max, pattern],
   );
 
-  // Changing a filter clears the shown result, which may no longer match
-  const onFilter = (setter) => (value) => { setter(value); setResult(null); };
+  const timer = useRef(null);
+  const lastPick = useRef(null);
+  const stopSpin = () => { clearTimeout(timer.current); timer.current = null; setRolling(false); };
+  useEffect(() => () => clearTimeout(timer.current), []); // closing mid-spin
 
+  // Changing a filter cancels a spin and clears the result, which may no longer match
+  const onFilter = (setter) => (value) => { stopSpin(); setter(value); setResult(null); };
+
+  // Slot-machine spin: ~5s, fast at first then slowing down before it stops
   const roll = () => {
-    if (!candidates.length) return;
+    if (!candidates.length || timer.current) return;
     setRolling(true);
-    // Short shuffle so a re-roll visibly changes, then settle on the pick
-    let ticks = 0;
-    const iv = setInterval(() => {
-      setResult(pickRandom(candidates));
-      if (++ticks >= 6) {
-        clearInterval(iv);
-        setResult(prev => pickRandom(candidates, prev));
+    const delays = [];
+    for (let i = 0, total = 0; total < SPIN_MS; i++) {
+      const d = 50 + Math.min(i / 25, 1) ** 2 * 450;
+      delays.push(d);
+      total += d;
+    }
+    let shown = result;
+    const step = (i) => {
+      if (i === delays.length - 1) {
+        // Final pick: any matching dish except the previous final one
+        const pick = pickRandom(candidates, lastPick.current);
+        lastPick.current = pick;
+        setResult(pick);
+        timer.current = null;
         setRolling(false);
+        return;
       }
-    }, 60);
+      shown = pickRandom(candidates, shown);
+      setResult(shown);
+      timer.current = setTimeout(() => step(i + 1), delays[i]);
+    };
+    step(0);
   };
 
   const unpriced = dishes ? dishes.filter(d => d.price === null || d.price === undefined).length : 0;
@@ -123,12 +143,12 @@ export default function RandomDishModal({ orderId, onPick, onClose }) {
             </p>
 
             {result ? (
-              <div className="card" style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, borderLeft: '3px solid var(--accent-primary)' }}>
+              <div className="card" style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, borderLeft: `3px solid ${rolling ? 'var(--border-medium)' : 'var(--accent-primary)'}`, transition: 'border-color 0.3s' }}>
                 {result.image && (
                   <img src={result.image} alt={result.name}
                     style={{ width: 64, height: 64, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
                 )}
-                <div style={{ flex: 1, minWidth: 0, opacity: rolling ? 0.5 : 1 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: '1.05rem' }}>{result.name}</div>
                   <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                     {result.price !== null && result.price !== undefined ? `${formatMoney(result.price)} đ` : 'Chưa có giá'}
@@ -141,7 +161,9 @@ export default function RandomDishModal({ orderId, onPick, onClose }) {
             <div className="modal-actions">
               {result ? (
                 <>
-                  <button className="btn btn-secondary" onClick={roll} disabled={rolling || !candidates.length}>🔄 Random lại</button>
+                  <button className="btn btn-secondary" onClick={roll} disabled={rolling || !candidates.length}>
+                    {rolling ? '⏳ Đang quay...' : '🔄 Random lại'}
+                  </button>
                   <button className="btn btn-primary" onClick={() => onPick(result)} disabled={rolling}>✅ Chốt món</button>
                 </>
               ) : (

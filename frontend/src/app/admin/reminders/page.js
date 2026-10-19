@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { remindersAPI, formatMoney } from '@/lib/api';
+import { remindersAPI, blacklistAPI, formatMoney } from '@/lib/api';
 import { useToast } from '@/components/Toast';
 
 const DAYS = [
@@ -29,12 +29,15 @@ export default function RemindersPage() {
   const [settings, setSettings] = useState({ enabled: false, schedule: 'weekly', day_of_week: 'mon', time: '09:00', teams_webhook_url: '' });
   const [savingSettings, setSavingSettings] = useState(false);
   const [activeTab, setActiveTab] = useState('order');
+  const [blacklist, setBlacklist] = useState([]);
+  const [blacklisting, setBlacklisting] = useState(null); // member_id being added/removed
 
   const fetchAll = useCallback(async () => {
     try {
-      const [d, s] = await Promise.all([remindersAPI.debtors(), remindersAPI.getSettings()]);
+      const [d, s, b] = await Promise.all([remindersAPI.debtors(), remindersAPI.getSettings(), blacklistAPI.list()]);
       setDebtors(d);
       setSettings(s);
+      setBlacklist(b);
     } catch (err) {
       addToast(err.message, 'error');
     } finally {
@@ -59,6 +62,36 @@ export default function RemindersPage() {
       addToast(err.message, 'error');
     } finally {
       setSending(null);
+    }
+  };
+
+  const blacklistedIds = new Set(blacklist.map(b => b.member_id));
+
+  const handleBlacklist = async (d) => {
+    if (!confirm(`Thêm ${d.name} vào blacklist? Họ sẽ bị khoá đặt cơm và nhận email yêu cầu thanh toán.`)) return;
+    setBlacklisting(d.member_id);
+    try {
+      const res = await blacklistAPI.add(d.member_id);
+      addToast(res.emailed ? `Đã blacklist ${d.name} và gửi email ⛔` : `Đã blacklist ${d.name} (chưa có email để gửi)`);
+      setBlacklist(await blacklistAPI.list());
+    } catch (err) {
+      addToast(err.message, 'error');
+    } finally {
+      setBlacklisting(null);
+    }
+  };
+
+  const handleUnblacklist = async (memberId, name) => {
+    if (!confirm(`Gỡ ${name} khỏi blacklist? Họ sẽ đặt cơm lại được dù chưa trả hết nợ.`)) return;
+    setBlacklisting(memberId);
+    try {
+      await blacklistAPI.remove(memberId);
+      addToast(`Đã gỡ ${name} khỏi blacklist`);
+      setBlacklist(await blacklistAPI.list());
+    } catch (err) {
+      addToast(err.message, 'error');
+    } finally {
+      setBlacklisting(null);
     }
   };
 
@@ -195,6 +228,27 @@ export default function RemindersPage() {
                 </div>
               </div>
 
+              {blacklist.length > 0 && (
+                <div className="card mb-16" style={{ borderLeft: '3px solid #ff6b6b' }}>
+                  <div className="card-title" style={{ marginBottom: 6 }}>⛔ Blacklist ({blacklist.length})</div>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', margin: '0 0 12px' }}>
+                    Bị khoá đặt cơm (cả người được ủy quyền cũng không đặt giùm được). Tự gỡ khi số dư không còn âm.
+                  </p>
+                  <div className="flex gap-8" style={{ flexWrap: 'wrap' }}>
+                    {blacklist.map(b => (
+                      <span key={b.member_id} className="badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,107,107,0.1)', color: 'var(--text-primary)', border: '1px solid rgba(255,107,107,0.3)' }}>
+                        {b.name} <span style={{ color: '#ff6b6b', fontWeight: 700 }}>-{formatMoney(Math.abs(b.balance))}</span>
+                        <button className="btn btn-ghost btn-sm" style={{ padding: '0 4px' }}
+                          disabled={blacklisting !== null}
+                          onClick={() => handleUnblacklist(b.member_id, b.name)} title="Gỡ khỏi blacklist">
+                          {blacklisting === b.member_id ? '⏳' : 'Gỡ'}
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="card">
                 <table className="table">
                   <thead>
@@ -202,14 +256,17 @@ export default function RemindersPage() {
                       <th>Thành viên</th>
                       <th style={{ textAlign: 'right' }}>Số nợ</th>
                       <th>Email</th>
-                      <th style={{ width: 200 }}></th>
+                      <th style={{ width: 300 }}></th>
                     </tr>
                   </thead>
                   <tbody>
                     {debtors.map(d => (
                       <tr key={d.member_id}>
                         <td>
-                          <div style={{ fontWeight: 600 }}>{d.name}</div>
+                          <div style={{ fontWeight: 600 }}>
+                            {d.name}
+                            {blacklistedIds.has(d.member_id) && <span title="Đang bị blacklist" style={{ marginLeft: 6 }}>⛔</span>}
+                          </div>
                           {d.name !== d.full_name && (
                             <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{d.full_name}</div>
                           )}
@@ -245,6 +302,17 @@ export default function RemindersPage() {
                             >
                               {sending === `${d.member_id}:teams` ? '⏳' : '📢 Teams'}
                             </button>
+                            {blacklistedIds.has(d.member_id) ? (
+                              <button className="btn btn-secondary btn-sm" disabled={blacklisting !== null}
+                                onClick={() => handleUnblacklist(d.member_id, d.name)}>
+                                {blacklisting === d.member_id ? '⏳' : '✅ Gỡ blacklist'}
+                              </button>
+                            ) : (
+                              <button className="btn btn-secondary btn-sm" disabled={blacklisting !== null}
+                                onClick={() => handleBlacklist(d)} style={{ color: '#ff6b6b' }}>
+                                {blacklisting === d.member_id ? '⏳' : '⛔ Blacklist'}
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

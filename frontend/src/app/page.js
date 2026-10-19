@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ordersAPI, orderItemsAPI, membersAPI, restaurantsAPI, delegationsAPI, formatMoney, getInitials, getTodayString } from '@/lib/api';
+import { ordersAPI, orderItemsAPI, membersAPI, restaurantsAPI, delegationsAPI, blacklistAPI, formatMoney, getInitials, getTodayString } from '@/lib/api';
 import { useToast } from '@/components/Toast';
 import PickupBanner from '@/components/PickupBanner';
 import { MenuGallery } from '@/components/MenuGallery';
 import RandomDishModal from '@/components/RandomDishModal';
+import DebtLockModal from '@/components/DebtLockModal';
 import { parseDishLines, formatDishLines } from '@/lib/randomDish';
 import { isAdmin, getUser, canManageOrders } from '@/lib/auth';
 import { useOrderRealtime } from '@/lib/useOrderRealtime';
@@ -51,6 +52,8 @@ export default function HomePage() {
   const [beMenuDismissed, setBeMenuDismissed] = useState(false);
   const [creating, setCreating] = useState(false);
   const [submittingDish, setSubmittingDish] = useState(false);
+  const [debtLock, setDebtLock] = useState(null); // {blocked, debt} from the blacklist
+  const [showDebtLock, setShowDebtLock] = useState(false);
   const addToast = useToast();
   const admin = isAdmin();
   const manager = canManageOrders();
@@ -70,14 +73,19 @@ export default function HomePage() {
   const minutesLeft = useCountdown(todayOrder?.order_deadline);
   const deadlinePassed = minutesLeft !== null && minutesLeft <= 0;
   const canOrder = todayOrder?.status === 'open' && !deadlinePassed;
+  // Blacklisted: can't order for themself (admin is never locked); may still order for grantors
+  const selfLocked = !admin && !!debtLock?.blocked;
+  const orderableMembers = (admin ? members : members.filter(m => allowedMemberIds.has(m.id)))
+    .filter(m => !(selfLocked && m.id === currentUser?.member_id));
 
   const fetchData = useCallback(async () => {
     try {
-      const [orderResult, membersList, restaurantList, delegationList] = await Promise.all([
+      const [orderResult, membersList, restaurantList, delegationList, lock] = await Promise.all([
         ordersAPI.getToday(),
         membersAPI.list(),
         restaurantsAPI.list().catch(() => []),
         delegationsAPI.list().catch(() => []),
+        blacklistAPI.me().catch(() => null),
       ]);
       // getToday returns array; guard against legacy null/object
       const ordersArray = Array.isArray(orderResult)
@@ -94,6 +102,7 @@ export default function HomePage() {
         .filter(d => d.delegate_member_id === myMemberId && d.status === 'active')
         .forEach(d => allowed.add(d.grantor_member_id));
       setAllowedMemberIds(allowed);
+      setDebtLock(lock);
     } catch (err) {
       logger.error('Failed to fetch home data', { error: err.message });
     } finally {
@@ -102,6 +111,15 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Pop the debt notice once per page visit, when a menu is there to order from
+  const debtPopupShown = useRef(false);
+  useEffect(() => {
+    if (selfLocked && todayOrder && !debtPopupShown.current) {
+      debtPopupShown.current = true;
+      setShowDebtLock(true);
+    }
+  }, [selfLocked, todayOrder]);
 
   // Real-time: refetch whenever anyone else changes today's orders/items
   useOrderRealtime(todayOrders.map(o => o.id), fetchData);
@@ -352,6 +370,17 @@ export default function HomePage() {
             />
           )}
 
+          {showDebtLock && selfLocked && (
+            <DebtLockModal debt={debtLock.debt} fullName={currentUser?.full_name} onClose={() => setShowDebtLock(false)} />
+          )}
+
+          {selfLocked && (
+            <div className="debt-lock-banner">
+              <span>⛔ Bạn đang nợ <strong>{formatMoney(debtLock.debt)} đ</strong> — tính năng đặt cơm bị khoá cho tới khi thanh toán.</span>
+              <button className="btn btn-primary btn-sm" onClick={() => setShowDebtLock(true)}>💳 Thanh toán</button>
+            </div>
+          )}
+
           <PickupBanner order={todayOrder} manager={manager} currentMemberId={currentUser?.member_id}
             onChanged={fetchData} addToast={addToast} />
 
@@ -418,7 +447,7 @@ export default function HomePage() {
 
           <div className="grid-2">
             {/* Order Form */}
-            {canOrder && (
+            {canOrder && orderableMembers.length > 0 && (
               <div className="card">
                 <div className="card-title" style={{ marginBottom: '16px' }}>✏️ Chọn Món</div>
                 <div className="form-group">
@@ -431,7 +460,7 @@ export default function HomePage() {
                     )}
                   </label>
                   <div className="member-select-grid">
-                    {(admin ? members : members.filter(m => allowedMemberIds.has(m.id))).map(m => {
+                    {orderableMembers.map(m => {
                       const hasOrdered = eatingItems.some(i => i.member_id === m.id);
                       const isProxy = m.id !== currentUser?.member_id;
                       return (
@@ -572,7 +601,7 @@ export default function HomePage() {
                     </div>
                     {isFinalized ? (
                       <div className="item-cost">{formatMoney(item.total_cost)}</div>
-                    ) : canOrder ? (
+                    ) : canOrder && !(selfLocked && item.member_id === currentUser?.member_id) ? (
                       <button className="btn btn-ghost btn-sm" onClick={() => handleCancelItem(item.id)} title="Hủy">✕</button>
                     ) : null}
                   </div>
@@ -606,6 +635,20 @@ export default function HomePage() {
       {createModal}
 
       <style jsx>{`
+        .debt-lock-banner {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+          background: rgba(255, 107, 107, 0.1);
+          border: 1px solid rgba(255, 107, 107, 0.3);
+          border-radius: var(--radius-md);
+          padding: 10px 16px;
+          margin-bottom: 16px;
+          color: var(--status-finalized);
+          font-size: 0.9rem;
+        }
         .deadline-banner {
           background: rgba(78, 205, 196, 0.1);
           border: 1px solid rgba(78, 205, 196, 0.3);

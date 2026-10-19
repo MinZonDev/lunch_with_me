@@ -9,6 +9,7 @@ from app.schemas import (
 )
 from app.core.auth import get_current_user, get_current_admin, get_order_manager
 from app.services.delegation import has_active_delegation
+from app.services.blacklist import is_blocked
 from app.services.ledger import member_names
 
 logger = logging.getLogger("lwm.order_items")
@@ -50,9 +51,18 @@ def _get_member_name(db, member_id: int) -> str:
 
 
 def _check_order_permission(db, current_user, target_member_id: int) -> None:
-    """Raise 403 if current_user cannot act on behalf of target_member_id."""
+    """Raise 403 if current_user cannot act on behalf of target_member_id.
+
+    Admin may always act. Anyone else is refused when the target is
+    blacklisted — the member themself and their delegates alike.
+    """
     if getattr(current_user, "role", None) == "admin":
         return
+    if is_blocked(db, target_member_id):
+        raise HTTPException(
+            status_code=403,
+            detail="Thành viên này đang nợ tiền và bị khoá đặt cơm. Vui lòng thanh toán để được mở lại.",
+        )
     my_member_id = getattr(current_user, "member_id", None)
     if my_member_id == target_member_id:
         return

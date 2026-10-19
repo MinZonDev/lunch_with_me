@@ -170,6 +170,14 @@ export const remindersAPI = {
   saveSettings: (data) => fetchAPI('/api/reminders/settings', { method: 'PUT', body: JSON.stringify(data) }),
 };
 
+// ============== Blacklist ==============
+export const blacklistAPI = {
+  me: () => fetchAPI('/api/blacklist/me'),
+  list: () => fetchAPI('/api/blacklist'),
+  add: (member_id) => fetchAPI('/api/blacklist', { method: 'POST', body: JSON.stringify({ member_id }) }),
+  remove: (member_id) => fetchAPI(`/api/blacklist/${member_id}`, { method: 'DELETE' }),
+};
+
 // ============== Delegations ==============
 export const delegationsAPI = {
   list: () => fetchAPI('/api/delegations'),

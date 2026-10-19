@@ -5,6 +5,7 @@ import calendar
 from app.database import get_db, _next_id, _to_ns
 from app.schemas import DepositCreate, ChargeCreate, DepositUpdate, DepositResponse, MemberBalanceResponse, DepositHistoryResponse, MemberDailyCost, SpendingItemResponse, MemberDetailResponse, MemberTransactionItem
 from app.core.auth import get_current_user, get_current_admin
+from app.services import blacklist
 from app.services.ledger import compute_balances, empty_balance, member_names, orders_by_ids, signed_delta
 
 router = APIRouter(prefix="/api/deposits", tags=["deposits"])
@@ -186,6 +187,7 @@ def approve_deposit(deposit_id: int, db=Depends(get_db), _=Depends(get_current_a
         raise HTTPException(status_code=400, detail="Deposit đã được duyệt")
     ref.update({"status": "approved"})
     d["status"] = "approved"
+    blacklist.debt_status(db, d["member_id"])  # unblocks the member if this paid off the debt
     return _deposit_response(d, {d["member_id"]: _member_name(db, d["member_id"])})
 
 

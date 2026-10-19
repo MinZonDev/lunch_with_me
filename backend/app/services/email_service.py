@@ -92,18 +92,34 @@ def _vietqr_url(bank_id: str, account: str, account_name: str, amount: int = 0, 
 
 def send_debt_reminder(full_name: str, email: str, balance: int, frontend_url: str):
     """Nhắc thành viên nạp tiền vì đang nợ."""
+    intro = (f'Bạn hiện đang <strong style="color:#ff6b6b;font-size:1.1em">nợ {abs(balance) * 1000:,} đ</strong> '
+             'tiền cơm. Vui lòng làm theo 2 bước bên dưới.')
+    _send(email, "⚠️ Nhắc nợ tiền cơm - Lunch With Me", _debt_payment_html(full_name, balance, frontend_url, intro))
+
+
+def send_blacklist_notice(full_name: str, email: str, balance: int, frontend_url: str):
+    """Báo thành viên bị khoá đặt cơm (blacklist) cho tới khi trả hết nợ."""
+    intro = (f'Bạn đang <strong style="color:#ff6b6b;font-size:1.1em">nợ {abs(balance) * 1000:,} đ</strong> '
+             'tiền cơm nên đã bị <strong style="color:#ff6b6b">tạm khoá tính năng đặt cơm</strong>. '
+             'Người được bạn ủy quyền cũng không thể đặt giùm. Vui lòng thanh toán theo 2 bước bên dưới — '
+             'tính năng đặt cơm sẽ tự mở lại khi admin xác nhận và số dư của bạn không còn âm.')
+    _send(email, "⛔ Tạm khoá đặt cơm do nợ tiền - Lunch With Me",
+          _debt_payment_html(full_name, balance, frontend_url, intro))
+
+
+def _debt_payment_html(full_name: str, balance: int, frontend_url: str, intro: str) -> str:
+    """Email body: greeting + intro, then QR / bank details and the deposit-request step."""
     from app.core.config import settings as cfg
     transfer_info = f"{full_name} nap com"
     qr_url = _vietqr_url(cfg.bank_id, cfg.bank_account, cfg.bank_account_name, abs(balance), transfer_info)
 
-    subject = "⚠️ Nhắc nợ tiền cơm - Lunch With Me"
-    html = f"""
+    return f"""
     <div style="font-family:sans-serif;max-width:520px;margin:auto;background:#1a1a2e;color:#f0f0f5;padding:32px;border-radius:16px">
       <h2 style="color:#ff8c42;margin:0 0 4px">🍱 Lunch With Me</h2>
       <p style="color:#a0a0b8;font-size:13px;margin:0 0 20px">Hệ thống đặt cơm nhóm</p>
 
       <p>Xin chào <strong>{full_name}</strong>,</p>
-      <p>Bạn hiện đang <strong style="color:#ff6b6b;font-size:1.1em">nợ {abs(balance) * 1000:,} đ</strong> tiền cơm. Vui lòng làm theo 2 bước bên dưới.</p>
+      <p>{intro}</p>
 
       <!-- Step 1: Bank transfer -->
       <div style="background:rgba(255,140,66,0.08);border:1px solid rgba(255,140,66,0.25);border-radius:12px;padding:20px;margin:20px 0">
@@ -141,7 +157,6 @@ def send_debt_reminder(full_name: str, email: str, balance: int, frontend_url: s
       </p>
     </div>
     """
-    _send(email, subject, html)
 
 
 def send_account_approved(full_name: str, email: str, frontend_url: str = ""):

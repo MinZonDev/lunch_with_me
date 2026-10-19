@@ -258,7 +258,8 @@ def sent_emails(monkeypatch):
     """Record outgoing emails instead of hitting SMTP."""
     import app.services.email_service as email_service
     calls = []
-    for name in ("send_otp_email", "send_reset_password", "send_account_approved"):
+    for name in ("send_otp_email", "send_reset_password", "send_account_approved",
+                 "send_blacklist_notice"):
         monkeypatch.setattr(email_service, name,
                             lambda *a, _n=name, **k: calls.append((_n, a, k)))
     return calls

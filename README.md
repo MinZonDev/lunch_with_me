@@ -35,6 +35,7 @@ Hệ thống đặt cơm trưa nội bộ cho nhóm — tự chọn món, chia t
 - Xem báo cáo tổng hợp theo tháng
 - Import lịch sử qua file Excel
 - Nhắc nhở tự động qua email (chưa chọn món, sắp hết deadline, số dư thấp)
+- Blacklist người nợ: khoá đặt cơm (kể cả người được ủy quyền), gửi email kèm QR thanh toán; tự gỡ khi số dư không còn âm
 - Gửi sao kê tháng qua email
 
 ---

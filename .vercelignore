@@ -1,0 +1,9 @@
+# Vercel only builds frontend/ (Root Directory); never upload backend secrets or data
+backend
+*.xlsx
+*.db
+.env
+.env.*
+serviceAccountKey*.json
+frontend/node_modules
+frontend/.next

@@ -99,3 +99,5 @@ desktop.ini
 
 # Claude Code per-machine settings (permission allowlist)
 .claude/settings.local.json
+
+.env*

@@ -14,7 +14,7 @@ VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 def _send(to: str | list[str], subject: str, html_body: str):
     if not settings.smtp_user or not settings.smtp_password:
         print(f"[Email] SMTP not configured — skipping send to {to}")
-        return
+        return False
 
     recipients = [to] if isinstance(to, str) else to
     msg = MIMEMultipart("alternative")
@@ -30,8 +30,10 @@ def _send(to: str | list[str], subject: str, html_body: str):
             server.login(settings.smtp_user, settings.smtp_password)
             server.sendmail(settings.smtp_user, recipients, msg.as_string())
         print(f"[Email] Sent '{subject}' to {recipients}")
+        return True
     except Exception as e:
         print(f"[Email] Failed to send to {recipients}: {e}")
+        return False
 
 
 def send_order_reminder(order_date: str, deadline_str: str, member_name: str, email: str, frontend_url: str):

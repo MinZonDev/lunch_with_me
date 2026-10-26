@@ -8,7 +8,7 @@ const point = (angle, radius) => {
   return [160 + radius * Math.cos(radians), 160 + radius * Math.sin(radians)];
 };
 
-export default function DishWheel({ items, rotation, rolling, reducedMotion, onSpin, onFinish }) {
+export default function DishWheel({ items, rotation, rolling, reducedMotion, onSpin, onFinish, itemLabel = 'món', hubIcon = '🍱' }) {
   const rotor = useRef(null);
   const previous = useRef(0);
   const finish = useRef(onFinish);
@@ -30,7 +30,7 @@ export default function DishWheel({ items, rotation, rolling, reducedMotion, onS
     return () => { animation.onfinish = null; animation.cancel(); };
   }, [rotation, reducedMotion]);
   const step = 360 / items.length;
-  return <div className="wheel" aria-label={`Vòng quay ${items.length} món`}>
+  return <div className="wheel" aria-label={`Vòng quay ${items.length} ${itemLabel}`}>
     <span className="pointer" aria-hidden="true" />
     <div ref={rotor} className="rotor" data-wheel-rotor data-motion={reducedMotion ? 'gentle' : 'standard'}>
       <svg viewBox="0 0 320 320" aria-hidden="true">
@@ -50,7 +50,7 @@ export default function DishWheel({ items, rotation, rolling, reducedMotion, onS
       </svg>
     </div>
     <button className="hub" onClick={onSpin} disabled={rolling} aria-label={rolling ? 'Đang quay' : 'Bắt đầu quay'}>
-      <span aria-hidden="true">🍱</span>
+      <span aria-hidden="true">{hubIcon}</span>
     </button>
     <style jsx>{`
       .wheel { position: relative; width: min(88vw, calc(100dvh - 185px), 1000px); aspect-ratio: 1; margin: auto; flex-shrink: 0; }

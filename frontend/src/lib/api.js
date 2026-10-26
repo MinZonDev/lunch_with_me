@@ -111,6 +111,14 @@ export const ordersAPI = {
 };
 
 // ============== Order Items ==============
+export const collectivePickupAPI = {
+  get: (id) => fetchAPI(`/api/orders/${id}/collective-pickup`, { signal: AbortSignal.timeout(20000) }),
+  history: (id) => fetchAPI(`/api/orders/${id}/collective-pickup/history`, { signal: AbortSignal.timeout(20000) }),
+  open: (id) => fetchAPI(`/api/orders/${id}/collective-pickup`, { method: 'POST', signal: AbortSignal.timeout(20000) }),
+  action: (id, session, action) => fetchAPI(`/api/orders/${id}/collective-pickup/${session}/${action}`, { method: 'POST', signal: AbortSignal.timeout(20000) }),
+  retry: (id, session, event) => fetchAPI(`/api/orders/${id}/collective-pickup/${session}/notifications/${event}`, { method: 'POST', signal: AbortSignal.timeout(20000) }),
+};
+
 export const orderItemsAPI = {
   list: (orderId) => fetchAPI(`/api/orders/${orderId}/items`),
   create: (orderId, data) => fetchAPI(`/api/orders/${orderId}/items`, { method: 'POST', body: JSON.stringify(data) }),

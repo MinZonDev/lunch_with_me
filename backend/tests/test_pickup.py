@@ -86,6 +86,39 @@ class TestAutoPick:
         _order(client, admin, [2])
         assert pickup.run_due(db, NOW + timedelta(days=1)) == 0
 
+    def test_previous_day_picker_sits_out(self, client, db, admin, team):
+        db.collection("daily_orders").document("900").set(
+            {"id": 900, "order_date": "2026-07-09", "pickup_member_ids": [2]})
+        oid = _order(client, admin, [2, 3, 4])
+        ref = db.collection("daily_orders").document(str(oid))
+        rng = random.Random(1)
+        for _ in range(200):
+            assert pickup.pick(db, ref, reroll=True, rng=rng)["pickup_member_ids"][0] != 2
+
+    def test_previous_picker_allowed_when_no_one_else(self, client, db, admin, team):
+        db.collection("daily_orders").document("900").set(
+            {"id": 900, "order_date": "2026-07-09", "pickup_member_ids": [2]})
+        oid = _order(client, admin, [2, 3], pickup_count=2)
+        ref = db.collection("daily_orders").document(str(oid))
+        assert pickup.pick(db, ref, reroll=True)["pickup_member_ids"] == [2, 3]
+
+    def test_frequent_pickers_less_likely(self, client, db, admin, team):
+        # Bình collected twice recently (not yesterday), Chi once, Dũng never.
+        for doc_id, day, ids in (("901", "2026-07-03", [2]), ("902", "2026-07-06", [2]),
+                                 ("903", "2026-07-07", [3]), ("904", "2026-07-08", [4]),
+                                 ("905", "2026-07-09", [4]), ("906", "2026-06-01", [3, 3])):
+            db.collection("daily_orders").document(doc_id).set(
+                {"id": int(doc_id), "order_date": day, "pickup_member_ids": ids})
+        # Dũng picked yesterday -> excluded; weights Bình 1/9, Chi 1/4 (06-01 is outside window).
+        oid = _order(client, admin, [2, 3, 4])
+        ref = db.collection("daily_orders").document(str(oid))
+        rng = random.Random(7)
+        counts = {2: 0, 3: 0, 4: 0}
+        for _ in range(1300):
+            counts[pickup.pick(db, ref, reroll=True, rng=rng)["pickup_member_ids"][0]] += 1
+        assert counts[4] == 0
+        assert 300 < counts[2] < 500 and 800 < counts[3] < 1000, counts
+
     def test_uniform_distribution(self, client, db, admin, team):
         oid = _order(client, admin, [2, 3, 4])
         ref = db.collection("daily_orders").document(str(oid))

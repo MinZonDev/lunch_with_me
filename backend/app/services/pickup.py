@@ -1,17 +1,22 @@
 """Pick who collects the food (người lấy cơm) for an order and email the eaters.
 
 Runs automatically once the order deadline passes (scheduler, every minute)
-and on demand when an admin/orderer re-rolls. Everyone who ordered has the
-same chance.
+and on demand when an admin/orderer re-rolls. The draw is weighted by recent
+history so the duty rotates: whoever collected on the previous order day sits
+out (when there are enough other eaters), and each pickup in the last
+HISTORY_DAYS cuts a member's chance to 1/(1+n)^2.
 """
 
 import logging
 import random
-from datetime import datetime, timezone
+from collections import Counter
+from datetime import date, datetime, timedelta, timezone
 
 from firebase_admin import firestore as fb_firestore
 
 logger = logging.getLogger("lwm.pickup")
+
+HISTORY_DAYS = 14
 
 
 def _eater_ids(db, order_id: int) -> list[int]:
@@ -20,6 +25,35 @@ def _eater_ids(db, order_id: int) -> list[int]:
         .where("daily_order_id", "==", order_id)
         .where("is_eating", "==", True).select(["member_id"]).stream()
     })
+
+
+def _recent_pickups(db, order_date: str) -> tuple[Counter, set[int]]:
+    """Pickup counts per member over the last HISTORY_DAYS before order_date,
+    plus who collected on the most recent earlier day that had a pickup."""
+    start = (date.fromisoformat(str(order_date)) - timedelta(days=HISTORY_DAYS)).isoformat()
+    by_date: dict[str, set[int]] = {}
+    for s in (db.collection("daily_orders")
+              .where("order_date", ">=", start).where("order_date", "<", str(order_date))
+              .select(["order_date", "pickup_member_ids"]).stream()):
+        o = s.to_dict()
+        if o.get("pickup_member_ids"):
+            by_date.setdefault(str(o["order_date"]), set()).update(o["pickup_member_ids"])
+    counts = Counter(m for ids in by_date.values() for m in ids)
+    last = by_date[max(by_date)] if by_date else set()
+    return counts, last
+
+
+def _weighted_sample(eaters: list[int], count: int, counts: Counter, last: set[int], rng) -> list[int]:
+    pool = [m for m in eaters if m not in last]
+    if len(pool) < count:
+        pool = list(eaters)
+    chosen = []
+    for _ in range(count):
+        weights = [1 / (1 + counts[m]) ** 2 for m in pool]
+        m = rng.choices(pool, weights=weights)[0]
+        chosen.append(m)
+        pool.remove(m)
+    return chosen
 
 
 def pick(db, order_ref, *, reroll: bool = False, rng: random.Random | None = None) -> dict | None:
@@ -35,7 +69,8 @@ def pick(db, order_ref, *, reroll: bool = False, rng: random.Random | None = Non
     if not eaters:
         return None
     count = min(max(order.get("pickup_count", 1) or 1, 1), len(eaters))
-    chosen = sorted((rng or random).sample(eaters, count))
+    counts, last = _recent_pickups(db, order["order_date"])
+    chosen = sorted(_weighted_sample(eaters, count, counts, last, rng or random))
     names_snap = db.get_all([db.collection("members").document(str(m)) for m in chosen])
     names = {int(s.id): s.to_dict().get("name", "?") for s in names_snap if s.exists}
     fields = {

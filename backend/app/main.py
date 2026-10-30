@@ -10,6 +10,7 @@ from app.routers import members, orders, order_items, deposits, reviews, auth
 from app.routers import reports, admin_router, restaurants, reminders, delegations, be_menu, withdrawals, cron, blacklist
 from app.middleware.logging_middleware import LoggingMiddleware
 from app.schemas import FrontendLogEntry
+from app.routers import collective_pickup
 
 setup_logging()
 logger = logging.getLogger("lwm.main")
@@ -75,6 +76,7 @@ app.include_router(be_menu.router)
 app.include_router(withdrawals.router)
 app.include_router(cron.router)
 app.include_router(blacklist.router)
+app.include_router(collective_pickup.router)
 
 
 @app.get("/api/health")

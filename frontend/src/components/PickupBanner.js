@@ -2,15 +2,15 @@
 
 import { useState } from 'react';
 import { ordersAPI } from '@/lib/api';
+import CollectivePickup from './CollectivePickup';
 
 // Who collects the food today. Picked automatically at the deadline;
 // admins/orderers can re-roll (which re-sends the email).
 export default function PickupBanner({ order, manager, currentMemberId, onChanged, addToast }) {
   const [busy, setBusy] = useState(false);
+  const [method, setMethod] = useState(null);
   const picked = order.pickup_names?.length > 0;
   const eaters = order.items?.filter(i => i.is_eating).length || 0;
-
-  if (!picked && !(manager && eaters > 0)) return null;
 
   const reroll = async () => {
     if (busy) return;
@@ -33,6 +33,9 @@ export default function PickupBanner({ order, manager, currentMemberId, onChange
   const isMe = currentMemberId && order.pickup_member_ids?.includes(currentMemberId);
 
   return (
+    <>
+    <CollectivePickup order={order} currentMemberId={currentMemberId} onChanged={onChanged} addToast={addToast} onMethod={setMethod} />
+    {method === 'legacy' && (picked || (manager && eaters > 0)) &&
     <div className="card mb-16" style={{
       borderLeft: '3px solid #ff8c42',
       background: isMe ? 'rgba(255,140,66,0.08)' : undefined,
@@ -60,5 +63,7 @@ export default function PickupBanner({ order, manager, currentMemberId, onChange
         </button>
       )}
     </div>
+    }
+    </>
   );
 }

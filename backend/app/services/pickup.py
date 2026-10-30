@@ -47,6 +47,8 @@ def pick(db, order_ref, *, reroll: bool = False, rng: random.Random | None = Non
     @fb_firestore.transactional
     def _claim(transaction, ref):
         current = ref.get(transaction=transaction).to_dict()
+        if current.get('pickup_method') == 'collective':
+            return False
         if current.get("pickup_member_ids") and not reroll:
             return False
         transaction.update(ref, fields)
@@ -91,7 +93,7 @@ def run_due(db, now: datetime | None = None) -> int:
     for snap in db.collection("daily_orders").where("order_date", "==", today).stream():
         o = snap.to_dict()
         deadline = o.get("order_deadline")
-        if o.get("pickup_member_ids") or not deadline:
+        if o.get('pickup_method') == 'collective' or o.get("pickup_member_ids") or not deadline:
             continue
         if deadline.tzinfo is None:
             deadline = deadline.replace(tzinfo=timezone.utc)

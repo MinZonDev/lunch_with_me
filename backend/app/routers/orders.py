@@ -478,6 +478,8 @@ def reroll_pickup(
     ref, order = _get_order_by_id(db, order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    if getattr(order, 'pickup_method', 'legacy') == 'collective':
+        raise HTTPException(409, 'Hãy hủy phiên tập thể và đổi phương thức trước')
     if count is not None:
         ref.update({"pickup_count": count})
     picked = pickup.pick(db, ref, reroll=True)
